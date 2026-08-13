@@ -118,6 +118,9 @@ def test_homepage_has_single_role_aware_primary_task_and_direct_role_actions() -
     assert "function runRoleAction(role)" in source
     assert "推荐体验流程" in source
     assert "其他场景入口" in source
+    assert "function switchRoleAndGo(role,view)" in source
+    assert "switchRoleAndGo('agent','tickets')" in source
+    assert "switchRoleAndGo('supervisor','metrics')" in source
 
 
 def test_consumer_chat_uses_bound_demo_order_without_requiring_reentry() -> None:
