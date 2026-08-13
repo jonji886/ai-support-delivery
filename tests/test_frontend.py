@@ -97,6 +97,29 @@ def test_manual_queue_has_server_pagination_and_search_controls() -> None:
     assert "loadTickets(){let tickets=[]" in source
 
 
+def test_homepage_explains_quick_start_and_role_guides() -> None:
+    source = HTML.read_text(encoding="utf-8")
+    assert "三步快速上手" in source
+    assert "选择角色" in source
+    assert "完成核心动作" in source
+    assert "观察交付结果" in source
+    assert "data-onboarding-role=\"consumer\"" in source
+    assert "data-onboarding-role=\"agent\"" in source
+    assert "data-onboarding-role=\"supervisor\"" in source
+    assert "data-onboarding-role=\"implementer\"" not in source
+    assert "function updateOnboarding(role)" in source
+
+
+def test_homepage_has_single_role_aware_primary_task_and_direct_role_actions() -> None:
+    source = HTML.read_text(encoding="utf-8")
+    assert 'id="taskAction"' in source
+    assert 'id="taskDescription"' in source
+    assert "function runPrimaryAction()" in source
+    assert "function runRoleAction(role)" in source
+    assert "推荐体验流程" in source
+    assert "其他场景入口" in source
+
+
 def test_consumer_chat_uses_bound_demo_order_without_requiring_reentry() -> None:
     source = HTML.read_text(encoding="utf-8")
     assert "const defaultOrder='OD202608001'" in source
@@ -110,3 +133,15 @@ def test_agent_chat_is_read_only_and_replies_from_ticket_workspace() -> None:
     assert "客服只读视图" in source
     assert ".agent-readonly .composer" in source
     assert "请从“人工接管”进入工单详情并发送客服回复" in source
+
+
+def test_review_feedback_uses_toast_and_custom_rejection_modal() -> None:
+    source = HTML.read_text(encoding="utf-8")
+    assert 'id="toastStack"' in source
+    assert 'id="rejectModal"' in source
+    assert "function showToast(title,message,type='success')" in source
+    assert "function openRejectModal(applicationId)" in source
+    assert "function confirmReject()" in source
+    assert "showToast(decision==='approved'?'退货申请已审核通过'" in source
+    assert "window.alert" not in source
+    assert "window.prompt" not in source
