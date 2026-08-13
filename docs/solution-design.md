@@ -1,6 +1,41 @@
 # 解决方案设计
 
-`/assist` 是 MVP 编排入口，优先使用配置的 DeepSeek 做意图分类，失败时回退到确定性安全路由，然后只允许路由到白名单 Tool：物流查询、退换货判断、规则检索、退货申请和工单创建。订单 Tool 只读取匿名模拟数据，并校验 `X-User-Id` 与订单归属；规则 Tool 使用向量召回、关键词召回、RRF 融合、模型/ Cross-Encoder 重排和生效版本过滤，只返回带版本和来源的生效内容；本地使用确定性 Provider，生产必须注入真实 embedding 和 reranker。投诉、退款争议和支付敏感路径创建幂等工单并返回人工摘要。
+`/assist` 是 MVP 编排入口，由 LangGraph 显式状态图执行 `load_context → classify_intent → 条件业务节点 → finalize`。条件业务节点包括低置信度转人工、高风险转人工、物流查询、退换货判断和规则检索；节点通过依赖注入调用现有 Service，不直接访问或修改业务数据。意图分类优先使用显式安全信号和配置的 DeepSeek，失败时回退到确定性安全路由。订单 Tool 只读取匿名模拟数据并校验归属。规则 Tool 先将 `published + 生效时间窗口 + 区域` 作为硬准入条件，再执行 lexical/vector 候选生成与 RRF 融合，最后通过独立证据充分性门禁；只有直接支持问题的片段才能成为答案和引用。重排是可选策略而非固定装饰，本地消融未证明测试 reranker 的边际收益，因此默认 `fusion`；生产真实 reranker 必须在相同评测契约下证明收益后启用。
+
+## RAG 正确性边界
+
+```mermaid
+flowchart LR
+    D[版本化规则] --> M{发布状态/时间/区域合格?}
+    M -->|否| X[禁止进入候选]
+    M -->|是| L[Lexical 召回]
+    M -->|是| V[Vector 召回]
+    L --> F[RRF 融合]
+    V --> F
+    F --> R[可选 Rerank]
+    R --> E{证据充分性 ≥ 阈值?}
+    E -->|否| H[拒答/转人工]
+    E -->|是| A[规则正文 + 片段级有效引用]
+```
+
+版本生命周期、检索相关性和证据充分性是三种不同判断。旧版本即使措辞更贴近问题也不得进入候选；主题相关的规则即使排在 Top1，如果不能回答“发票、赔付、保险”等细节也必须拒答。POC 的证据门禁使用知识负责人维护的可回答范围和确定性匹配，生产可替换为经校准的 NLI/模型验证器，但不得删除这一契约。
+
+LangGraph 状态只承载本轮请求所需的输入、路由判断、Tool 结果和待持久化更新。跨请求会话仍以 SQLite `ConversationStore` 为事实来源，工单和退货申请仍由各自 Service 持久化；当前不启用 LangGraph checkpointer，避免与既有业务存储形成双写。若未来引入需要暂停并在同一次图执行中恢复的长事务，再为该工作流设计单一持久化所有权和生产级 checkpointer。
+
+```mermaid
+flowchart LR
+    A[load_context] --> B[classify_intent]
+    B -->|低置信度| C[low_confidence_handoff]
+    B -->|投诉/支付敏感| D[risk_handoff]
+    B -->|物流| E[query_logistics]
+    B -->|退货| F[check_return_eligibility]
+    B -->|规则| G[search_policy]
+    C --> H[finalize]
+    D --> H
+    E --> H
+    F --> H
+    G --> H
+```
 
 核心产品取舍是：模型理解用户，业务 Tool 证明事实，人工处理例外。模型不生成订单事实、退货结论或规则引用；没有可靠依据时拒答或转人工。这样牺牲部分自动化覆盖率，换取事实可追溯、风险可控和失败可解释。
 
@@ -23,3 +58,19 @@
 规则问答展示 Tool 返回的 `data.answer` 作为主回答，并附带引用标题与版本；过程状态文案不能替代规则正文。
 
 所有 Tool 返回统一的 `success/data/error_code/message/trace_id`。无订单、无规则、订单异常和高风险争议均不能生成确定性事实。会话、工单、退货申请和质量事件在 POC 中使用 SQLite。当前前端提供基础指标和风险事件视图，不是生产级实时质量看板。生产环境需将模拟身份、SQLite 和本地 JSON 替换为客户认证、生产数据库、可靠事件流和可评测的混合检索。
+
+## 运行可观测性
+
+运行诊断与业务质量事件分开存储：`EventStore` 保留会话/Tool 的业务统计事件，`TraceStore` 只负责请求执行链路。HTTP 中间件为每个请求创建新的 `trace_id`，写入响应体（统一 Tool 响应）和 `X-Trace-Id` 响应头；`/assist` 内部将每个 LangGraph 节点记录为 `graph.*` Span，并将模型、RAG、Tool 记录为其子 Span。这样既能看到“经过了哪些节点”，也能定位“哪次外部/业务调用失败或变慢”。
+
+```mermaid
+flowchart LR
+    T[HTTP Trace] --> G1[graph.load_context]
+    T --> G2[graph.classify_intent]
+    G2 --> M[model.deepseek.classify 可选]
+    T --> G3[graph.业务节点]
+    G3 --> X[tool.* 或 rag.search_policy]
+    T --> G4[graph.finalize]
+```
+
+Span 只记录低基数技术属性，例如节点名、Tool 名、意图、候选数、引用数、Provider、状态和错误码；不记录原始问题、订单详情、令牌、地址或联系方式。完整 Trace/Span 默认保存在 `runtime/observability.db`，同时输出单行 JSON 运行日志。管理接口支持按 `trace_id` 回放，以及按窗口聚合请求/操作的失败率和 P50/P95；当前不包含外部采集器、分布式传播、告警推送、采样和自动数据保留，生产化时应迁移到 OpenTelemetry Collector 与后端存储，并保留当前操作命名和属性契约。

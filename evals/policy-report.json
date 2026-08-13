@@ -1,11 +1,686 @@
 {
-  "total_queries": 6,
-  "supported_queries": 5,
-  "recall_at_k": 1.0,
-  "rerank_top1_accuracy": 1.0,
-  "unsupported_rejection_rate": 1.0,
+  "report_version": "rag-eval-v2",
+  "knowledge_version": "policies-2026-08-p0",
+  "index_version": "in-memory-poc-v2",
   "embedding_provider": "deterministic-test-embedding",
   "reranker_provider": "lexical-test-reranker",
-  "knowledge_update_version": "return-policy-v1",
-  "knowledge_update_assertion": true
+  "evidence_threshold": 0.65,
+  "dataset_policy": {
+    "development": "允许用于诊断和调参，不用于宣称泛化效果",
+    "regression": "稳定发布契约；历史 badcase 修复后进入此集",
+    "challenge": "版本验收时运行；一旦用于调参即降级为开发数据并补充新挑战样本"
+  },
+  "strategies": [
+    "lexical",
+    "vector",
+    "fusion",
+    "fusion_rerank"
+  ],
+  "results": {
+    "development": {
+      "lexical": {
+        "total_cases": 30,
+        "supported_cases": 20,
+        "unsupported_cases": 10,
+        "end_to_end_pass_rate": 1.0,
+        "recall_at_5": 1.0,
+        "retrieval_top1_accuracy": 1.0,
+        "accepted_answer_accuracy": 1.0,
+        "unsupported_rejection_rate": 1.0,
+        "expired_version_leakage_rate": 0.0,
+        "latency_ms": {
+          "mean": 0.802,
+          "p95": 2.066
+        },
+        "failures": []
+      },
+      "vector": {
+        "total_cases": 30,
+        "supported_cases": 20,
+        "unsupported_cases": 10,
+        "end_to_end_pass_rate": 0.7333,
+        "recall_at_5": 0.6,
+        "retrieval_top1_accuracy": 0.6,
+        "accepted_answer_accuracy": 0.6,
+        "unsupported_rejection_rate": 1.0,
+        "expired_version_leakage_rate": 0.0,
+        "latency_ms": {
+          "mean": 0.604,
+          "p95": 1.402
+        },
+        "failures": [
+          {
+            "case_id": "dev-shipping-01",
+            "category": "paraphrase",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "dev-shipping-03",
+            "category": "paraphrase",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "dev-shipping-04",
+            "category": "colloquial",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "dev-shipping-05",
+            "category": "typo",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "dev-shipping-06",
+            "category": "short_query",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [
+              "return-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "dev-return-02",
+            "category": "region",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "dev-return-03",
+            "category": "paraphrase",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "dev-return-04",
+            "category": "keyword",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          }
+        ]
+      },
+      "fusion": {
+        "total_cases": 30,
+        "supported_cases": 20,
+        "unsupported_cases": 10,
+        "end_to_end_pass_rate": 1.0,
+        "recall_at_5": 1.0,
+        "retrieval_top1_accuracy": 1.0,
+        "accepted_answer_accuracy": 1.0,
+        "unsupported_rejection_rate": 1.0,
+        "expired_version_leakage_rate": 0.0,
+        "latency_ms": {
+          "mean": 1.073,
+          "p95": 2.495
+        },
+        "failures": []
+      },
+      "fusion_rerank": {
+        "total_cases": 30,
+        "supported_cases": 20,
+        "unsupported_cases": 10,
+        "end_to_end_pass_rate": 1.0,
+        "recall_at_5": 1.0,
+        "retrieval_top1_accuracy": 1.0,
+        "accepted_answer_accuracy": 1.0,
+        "unsupported_rejection_rate": 1.0,
+        "expired_version_leakage_rate": 0.0,
+        "latency_ms": {
+          "mean": 1.493,
+          "p95": 4.502
+        },
+        "failures": []
+      }
+    },
+    "regression": {
+      "lexical": {
+        "total_cases": 40,
+        "supported_cases": 27,
+        "unsupported_cases": 13,
+        "end_to_end_pass_rate": 1.0,
+        "recall_at_5": 1.0,
+        "retrieval_top1_accuracy": 1.0,
+        "accepted_answer_accuracy": 1.0,
+        "unsupported_rejection_rate": 1.0,
+        "expired_version_leakage_rate": 0.0,
+        "latency_ms": {
+          "mean": 1.077,
+          "p95": 5.969
+        },
+        "failures": []
+      },
+      "vector": {
+        "total_cases": 40,
+        "supported_cases": 27,
+        "unsupported_cases": 13,
+        "end_to_end_pass_rate": 0.75,
+        "recall_at_5": 0.6296,
+        "retrieval_top1_accuracy": 0.6296,
+        "accepted_answer_accuracy": 0.6296,
+        "unsupported_rejection_rate": 1.0,
+        "expired_version_leakage_rate": 0.0,
+        "latency_ms": {
+          "mean": 0.846,
+          "p95": 1.924
+        },
+        "failures": [
+          {
+            "case_id": "reg-shipping-02",
+            "category": "core",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "reg-shipping-03",
+            "category": "core",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "reg-shipping-04",
+            "category": "core",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "reg-shipping-05",
+            "category": "typo",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "reg-shipping-07",
+            "category": "short_query",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "reg-shipping-10",
+            "category": "core",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "reg-return-01",
+            "category": "core",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "reg-return-03",
+            "category": "core",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "reg-return-07",
+            "category": "mixed_language",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "reg-version-03",
+            "category": "expired_version_trap",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          }
+        ]
+      },
+      "fusion": {
+        "total_cases": 40,
+        "supported_cases": 27,
+        "unsupported_cases": 13,
+        "end_to_end_pass_rate": 1.0,
+        "recall_at_5": 1.0,
+        "retrieval_top1_accuracy": 1.0,
+        "accepted_answer_accuracy": 1.0,
+        "unsupported_rejection_rate": 1.0,
+        "expired_version_leakage_rate": 0.0,
+        "latency_ms": {
+          "mean": 1.672,
+          "p95": 6.983
+        },
+        "failures": []
+      },
+      "fusion_rerank": {
+        "total_cases": 40,
+        "supported_cases": 27,
+        "unsupported_cases": 13,
+        "end_to_end_pass_rate": 0.975,
+        "recall_at_5": 1.0,
+        "retrieval_top1_accuracy": 0.963,
+        "accepted_answer_accuracy": 0.963,
+        "unsupported_rejection_rate": 1.0,
+        "expired_version_leakage_rate": 0.0,
+        "latency_ms": {
+          "mean": 2.209,
+          "p95": 9.36
+        },
+        "failures": [
+          {
+            "case_id": "reg-version-03",
+            "category": "expired_version_trap",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1",
+              "return-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          }
+        ]
+      }
+    },
+    "challenge": {
+      "lexical": {
+        "total_cases": 30,
+        "supported_cases": 20,
+        "unsupported_cases": 10,
+        "end_to_end_pass_rate": 0.7667,
+        "recall_at_5": 0.95,
+        "retrieval_top1_accuracy": 0.95,
+        "accepted_answer_accuracy": 0.65,
+        "unsupported_rejection_rate": 1.0,
+        "expired_version_leakage_rate": 0.0,
+        "latency_ms": {
+          "mean": 1.544,
+          "p95": 6.84
+        },
+        "failures": [
+          {
+            "case_id": "challenge-shipping-01",
+            "category": "colloquial",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-02",
+            "category": "noisy",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-03",
+            "category": "typo",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-08",
+            "category": "short_query",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-10",
+            "category": "question_form",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-return-09",
+            "category": "contrast",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [
+              "return-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-return-10",
+            "category": "noisy",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [
+              "return-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          }
+        ]
+      },
+      "vector": {
+        "total_cases": 30,
+        "supported_cases": 20,
+        "unsupported_cases": 10,
+        "end_to_end_pass_rate": 0.7,
+        "recall_at_5": 0.75,
+        "retrieval_top1_accuracy": 0.7,
+        "accepted_answer_accuracy": 0.55,
+        "unsupported_rejection_rate": 1.0,
+        "expired_version_leakage_rate": 0.0,
+        "latency_ms": {
+          "mean": 0.674,
+          "p95": 2.016
+        },
+        "failures": [
+          {
+            "case_id": "challenge-shipping-01",
+            "category": "colloquial",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-02",
+            "category": "noisy",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-03",
+            "category": "typo",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-08",
+            "category": "short_query",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-10",
+            "category": "question_form",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-return-04",
+            "category": "condition",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-return-06",
+            "category": "mixed_language",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1",
+              "return-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-return-09",
+            "category": "contrast",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [
+              "return-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-return-10",
+            "category": "noisy",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [
+              "return-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          }
+        ]
+      },
+      "fusion": {
+        "total_cases": 30,
+        "supported_cases": 20,
+        "unsupported_cases": 10,
+        "end_to_end_pass_rate": 0.7667,
+        "recall_at_5": 0.95,
+        "retrieval_top1_accuracy": 0.95,
+        "accepted_answer_accuracy": 0.65,
+        "unsupported_rejection_rate": 1.0,
+        "expired_version_leakage_rate": 0.0,
+        "latency_ms": {
+          "mean": 2.812,
+          "p95": 10.713
+        },
+        "failures": [
+          {
+            "case_id": "challenge-shipping-01",
+            "category": "colloquial",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-02",
+            "category": "noisy",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-03",
+            "category": "typo",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-08",
+            "category": "short_query",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-10",
+            "category": "question_form",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-return-09",
+            "category": "contrast",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [
+              "return-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-return-10",
+            "category": "noisy",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [
+              "return-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          }
+        ]
+      },
+      "fusion_rerank": {
+        "total_cases": 30,
+        "supported_cases": 20,
+        "unsupported_cases": 10,
+        "end_to_end_pass_rate": 0.7667,
+        "recall_at_5": 0.95,
+        "retrieval_top1_accuracy": 0.95,
+        "accepted_answer_accuracy": 0.65,
+        "unsupported_rejection_rate": 1.0,
+        "expired_version_leakage_rate": 0.0,
+        "latency_ms": {
+          "mean": 3.258,
+          "p95": 10.684
+        },
+        "failures": [
+          {
+            "case_id": "challenge-shipping-01",
+            "category": "colloquial",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-02",
+            "category": "noisy",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-03",
+            "category": "typo",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-08",
+            "category": "short_query",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-shipping-10",
+            "category": "question_form",
+            "expected_version": "shipping-policy-v1",
+            "ranked_versions": [
+              "shipping-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-return-09",
+            "category": "contrast",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [
+              "return-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          },
+          {
+            "case_id": "challenge-return-10",
+            "category": "noisy",
+            "expected_version": "return-policy-v1",
+            "ranked_versions": [
+              "return-policy-v1"
+            ],
+            "accepted": false,
+            "error_code": "404_POLICY_NOT_FOUND"
+          }
+        ]
+      }
+    }
+  },
+  "release_gate": {
+    "strategy": "fusion",
+    "dataset": "regression",
+    "thresholds": {
+      "end_to_end_pass_rate": 0.95,
+      "unsupported_rejection_rate": 0.9,
+      "expired_version_leakage_rate": 0.0
+    },
+    "passed": true
+  }
 }

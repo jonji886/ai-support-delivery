@@ -1,9 +1,24 @@
 from fastapi.testclient import TestClient
 from uuid import uuid4
 
-from apps.api.main import app
+from apps.api.main import app, support_graph
+from apps.api.agent.graph import REQUIRED_GRAPH_NODES
 
 client = TestClient(app)
+
+
+def test_assist_is_compiled_as_explicit_langgraph_workflow() -> None:
+    graph = support_graph.get_graph()
+    assert REQUIRED_GRAPH_NODES <= set(graph.nodes)
+    assert {
+        edge.target for edge in graph.edges if edge.source == "classify_intent"
+    } == {
+        "low_confidence_handoff",
+        "risk_handoff",
+        "query_logistics",
+        "check_return_eligibility",
+        "search_policy",
+    }
 
 
 def test_assist_logistics_uses_controlled_tool() -> None:
@@ -12,6 +27,15 @@ def test_assist_logistics_uses_controlled_tool() -> None:
     assert response.json()["data"]["order_status"] == "运输中"
     assert "最新节点" in response.json()["message"]
     assert "预计 2026-08-15T18:00:00Z 到达" in response.json()["message"]
+
+
+def test_assist_core_colloquial_routes_do_not_require_model() -> None:
+    logistics = client.post("/assist", json={"message": "帮我查下包裹", "order_id": "OD202608001"}, headers={"X-User-Id": "user-demo-001"})
+    returned = client.post("/assist", json={"message": "尺码不合适，想退", "order_id": "OD202608001", "return_reason": "尺码不合适"}, headers={"X-User-Id": "user-demo-001"})
+    complaint = client.post("/assist", json={"message": "客户一直没收到退款", "order_id": "OD202608001"})
+    assert logistics.json()["data"]["order_status"] == "运输中"
+    assert returned.json()["data"]["decision"] == "eligible"
+    assert complaint.json()["data"]["category"] == "complaint_or_dispute"
 
 
 def test_assist_complaint_handoffs_and_creates_ticket() -> None:

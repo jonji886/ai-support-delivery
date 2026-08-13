@@ -1,8 +1,0 @@
-[
-  {"question": "海外仓发货后几天到货", "expected_version": "shipping-policy-v1"},
-  {"question": "海外仓物流时效", "expected_version": "shipping-policy-v1"},
-  {"question": "退货规则适用于哪个地区", "expected_version": "return-policy-v1"},
-  {"question": "退货规则 return policy", "expected_version": "return-policy-v1"},
-  {"question": "海关税费能不能退", "expected_version": "none"},
-  {"question": "退货规则", "expected_version": "return-policy-v1", "top_k": 2}
-]

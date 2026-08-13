@@ -5,7 +5,9 @@ from pydantic import BaseModel
 
 
 def new_trace_id() -> str:
-    return uuid.uuid4().hex
+    from apps.api.support.observability import current_trace_id
+
+    return current_trace_id() or uuid.uuid4().hex
 
 
 class ToolResponse(BaseModel):

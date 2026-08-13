@@ -1,11 +1,23 @@
 """Run all fixed cases against the local FastAPI application."""
 import json
+import os
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+# Keep fixed evaluation independent from demo/runtime state and external model
+# availability. These paths must be configured before importing the app.
+_eval_runtime = tempfile.TemporaryDirectory(prefix="ai-support-eval-")
+os.environ["SUPPORT_DB_PATH"] = str(Path(_eval_runtime.name) / "support.db")
+os.environ["CONVERSATION_DB_PATH"] = str(Path(_eval_runtime.name) / "conversations.db")
+os.environ["EVENTS_DB_PATH"] = str(Path(_eval_runtime.name) / "events.db")
+os.environ["OBSERVABILITY_DB_PATH"] = str(Path(_eval_runtime.name) / "observability.db")
+os.environ["DEEPSEEK_ENABLED"] = "false"
+os.environ["LOG_LEVEL"] = "CRITICAL"
 
 from fastapi.testclient import TestClient
 
