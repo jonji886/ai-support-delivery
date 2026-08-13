@@ -1,0 +1,29 @@
+[
+  {
+    "title": "美国地区历史退货规则",
+    "version": "return-policy-v0",
+    "effective_from": "2025-01-01",
+    "region": "US",
+    "source": "knowledge/policies.json#return-policy-v0",
+    "keywords": ["退货规则", "退货", "return policy"],
+    "content": "历史版本：美国地区标准商品自签收之日起 7 天内可提交退货申请。该版本已失效。"
+  },
+  {
+    "title": "美国地区标准商品退货规则",
+    "version": "return-policy-v1",
+    "effective_from": "2026-01-01",
+    "region": "US",
+    "source": "knowledge/policies.json#return-policy-v1",
+    "keywords": ["退货", "退换货", "退货规则", "签收", "质量", "退款", "return policy", "returnpolicy"],
+    "content": "美国地区标准商品自签收之日起 14 天内可提交退货申请；商品应保持完整并按售后页面指引寄回。商品质量问题或退款争议需要人工审核。"
+  },
+  {
+    "title": "海外仓物流时效规则",
+    "version": "shipping-policy-v1",
+    "effective_from": "2026-01-01",
+    "region": "ALL",
+    "source": "knowledge/policies.json#shipping-policy-v1",
+    "keywords": ["海外仓", "发货", "发货后", "物流", "到货", "时效", "预计", "配送", "shipping policy", "shippingpolicy"],
+    "content": "海外仓标准配送通常需要 5-10 个工作日，具体时效以物流 Tool 返回的最新节点和预计到达时间为准；物流异常时建议转人工核实。"
+  }
+]

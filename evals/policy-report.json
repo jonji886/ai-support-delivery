@@ -1,0 +1,11 @@
+{
+  "total_queries": 6,
+  "supported_queries": 5,
+  "recall_at_k": 1.0,
+  "rerank_top1_accuracy": 1.0,
+  "unsupported_rejection_rate": 1.0,
+  "embedding_provider": "deterministic-test-embedding",
+  "reranker_provider": "lexical-test-reranker",
+  "knowledge_update_version": "return-policy-v1",
+  "knowledge_update_assertion": true
+}

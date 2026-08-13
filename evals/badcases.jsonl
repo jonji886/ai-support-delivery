@@ -1,0 +1,5 @@
+{"badcase_id":"BC-001","scenario":"中文规则问题未命中","root_cause":"初版检索按空格分词，不适合中文连续文本","fix":"改为按知识文档关键词匹配并增加中文评测用例","regression":"normal-policy-shipping-01..06 passed","version":"v1"}
+{"badcase_id":"BC-002","scenario":"规则问题被误路由到退货 Tool","root_cause":"退货关键词优先级高于规则问题识别","fix":"在编排层先识别规则/时效问题，再进入 policy 路由","regression":"normal-policy-return-01..02 passed","version":"v1"}
+{"badcase_id":"BC-003","scenario":"Tool 失败无法被评测识别为转人工","root_cause":"统一响应缺少显式 handoff 字段","fix":"ToolResponse.failure 默认 handoff=true，并补充契约测试","regression":"tool-error-logistics-01..05 passed","version":"v1"}
+{"badcase_id":"BC-004","scenario":"退换货回答使用通用查询成功文案","root_cause":"ToolResponse.success_result 提供了通用默认 message，且退换货 Tool 未覆盖业务文案","fix":"所有成功 Tool 必须显式提供业务 message，并展示 decision、basis、next_steps","regression":"ux-return-missing-reason、ux-return-success-message passed","version":"v1"}
+{"badcase_id":"BC-005","scenario":"直接输入带括号退货原因未被后端识别","root_cause":"仅前端场景按钮提供 return_reason，后端未解析自然语言中的原因","fix":"后端增加“原因：...”兜底解析并新增 API 回归测试","regression":"test_return_reason_can_be_extracted_from_user_message passed","version":"v1"}

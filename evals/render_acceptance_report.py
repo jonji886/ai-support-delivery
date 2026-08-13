@@ -1,0 +1,73 @@
+"""Render the acceptance report from the executable evaluation result."""
+import json
+from collections import Counter
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def render() -> None:
+    report = json.loads((ROOT / "evals/latest-report.json").read_text(encoding="utf-8"))
+    cases = [
+        json.loads(line)
+        for line in (ROOT / "evals/mvp-50.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    counts = Counter(case["category"] for case in cases)
+    total = report["total_cases"]
+    passed = report["passed_cases"]
+    core = report["core_scenario_pass_rate"] * 100
+    citation = report["citation_validity_rate"] * 100
+    handoff = report["high_risk_handoff_coverage"] * 100
+    tool = report["tool_success_rate"] * 100
+    p95 = report["p95_latency_ms"]
+    status = "达标" if core >= 85 else "未达标"
+    citation_status = "达标" if citation >= 90 else "未达标"
+    handoff_status = "达标" if handoff >= 95 else "未达标"
+    tool_status = "达标" if tool >= 95 else "未达标"
+    report_text = f'''# POC 验收报告
+
+## 报告口径
+
+本报告由 `evals/render_acceptance_report.py` 根据 `evals/latest-report.json` 自动生成；评测结果由 `evals/run_eval.py` 生成，固定集由 `evals/mvp-50.jsonl` 提供。README、验收报告和评测 JSON 不维护互相独立的手工指标。
+
+## 当前结果
+
+| 指标 | 当前结果 | SPEC 目标 | 结论 |
+| --- | ---: | ---: | --- |
+| 固定评测通过率 | {passed}/{total}，{core:.2f}% | ≥ 85% | {status} |
+| 规则引用有效率 | {citation:.2f}% | ≥ 90% | {citation_status} |
+| 高风险转人工覆盖率 | {handoff:.2f}% | ≥ 95% | {handoff_status} |
+| Tool 成功率 | {tool:.2f}% | ≥ 95% | {tool_status} |
+| 本地 TestClient P95 | 约 {p95:.2f}ms | ≤ 10 秒 | 达标 |
+
+当前结论：四类核心流程可以本地演示；高风险路由和部分异常场景是否达到试点标准，以以上指标和 SPEC 阻断条件为准。该结果不代表客户生产收益。
+
+## 评测覆盖
+
+当前固定集共 {total} 条：正常主流程 {counts['normal']}、业务边界 {counts['boundary']}、Tool 异常 {counts['tool_error']}、风险与转人工 {counts['risk']}、知识无依据/版本冲突 {counts['knowledge']}。每条用例校验允许的 Tool 调用、预期事实或引用、是否转人工，并对支付敏感工单分类和规则版本进行结构化断言。
+
+## 未通过样例与修复优先级
+
+失败样例见 `evals/latest-report.json`。当前优先关注支付敏感独立路由、口语化/多语言表达、连续追问和知识版本冲突。创建人工工单不自动等于风险意图被正确识别：风险类别、转人工原因和工单分类需要独立校验。
+
+1. P0：保持支付敏感意图独立路由，并将分类断言纳入固定回归。
+2. P0：评测结果、报告和 README 均从同一 JSON 数据源生成。
+3. P1：继续扩展多语言、错别字、连续追问、依赖故障和知识版本样本。
+
+## 尚未验证
+
+- Docker Compose 容器网络环境的独立采样尚未执行，当前环境没有 Docker CLI。
+- 当前前端是演示工作台，不包含真实登录、客服自动分配、持久化工单和生产级实时质量看板。
+- 当前规则检索是本地关键词匹配，不是生产级向量或混合检索。
+
+## 验收边界
+
+本报告只证明匿名模拟数据和本地演示环境中的可复现行为，不证明客户生产环境的自动解决率、人工成本节省、退款风险降低或系统容量。进入客户试点前必须补充真实基线、容器部署验证、认证授权验证和灰度回滚验证。
+'''
+    (ROOT / "docs/poc-acceptance-report.md").write_text(report_text, encoding="utf-8")
+
+
+if __name__ == "__main__":
+    render()

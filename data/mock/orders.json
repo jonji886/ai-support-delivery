@@ -1,0 +1,40 @@
+[
+  {
+    "order_id": "OD202608001",
+    "anonymous_user_id": "user-demo-001",
+    "order_status": "已签收",
+    "category": "standard_goods",
+    "signed_at": "2026-08-05T09:30:00Z",
+    "logistics": {
+      "order_id": "OD202608001",
+      "order_status": "运输中",
+      "carrier": "Demo Express",
+      "latest_event": {
+        "occurred_at": "2026-08-12T09:30:00Z",
+        "location": "Los Angeles, US",
+        "description": "包裹已到达当地分拨中心"
+      },
+      "exception": false,
+      "estimated_arrival": "2026-08-15T18:00:00Z"
+    }
+  },
+  {
+    "order_id": "OD202608002",
+    "anonymous_user_id": "user-demo-002",
+    "order_status": "物流异常",
+    "category": "standard_goods",
+    "signed_at": null,
+    "logistics": {
+      "order_id": "OD202608002",
+      "order_status": "物流异常",
+      "carrier": "Demo Post",
+      "latest_event": {
+        "occurred_at": "2026-08-10T14:20:00Z",
+        "location": "Chicago, US",
+        "description": "收件地址待补充"
+      },
+      "exception": true,
+      "estimated_arrival": null
+    }
+  }
+]
