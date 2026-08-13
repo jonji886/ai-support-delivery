@@ -1,11 +1,11 @@
 {
-  "dataset_version": "v2",
-  "total_cases": 55,
-  "passed_cases": 55,
+  "dataset_version": "v3",
+  "total_cases": 58,
+  "passed_cases": 58,
   "core_scenario_pass_rate": 1.0,
   "citation_validity_rate": 1.0,
   "high_risk_handoff_coverage": 1.0,
-  "p95_latency_ms": 818.69,
+  "p95_latency_ms": 990.9,
   "tool_success_rate": 1.0,
   "failures": []
 }

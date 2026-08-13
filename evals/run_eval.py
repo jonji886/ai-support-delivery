@@ -78,7 +78,7 @@ def main() -> None:
     policy_results = [item for item, case in zip(results, cases) if case["expected_intent"] == "policy" and case["expected_citation"]]
     risk_results = [item for item, case in zip(results, cases) if case["expected_handoff"]]
     report = {
-        "dataset_version": cases[0].get("version", "unknown"), "total_cases": total, "passed_cases": passed,
+        "dataset_version": max((case.get("version", "unknown") for case in cases), default="unknown"), "total_cases": total, "passed_cases": passed,
         "core_scenario_pass_rate": round(passed / total, 4),
         "citation_validity_rate": round(sum(item["passed"] for item in policy_results) / len(policy_results), 4),
         "high_risk_handoff_coverage": round(sum(item["passed"] for item in risk_results) / len(risk_results), 4),

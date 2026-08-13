@@ -64,8 +64,8 @@
 - `GET /admin/events`：同样需要实施管理员或主管角色，返回脱敏的会话/Tool 事件及 `trace_id`。
 - `POST /tools/handoff-human`：输入会话摘要、转人工原因和幂等键，输出工单/接管信息；该 Tool 的响应 `handoff` 固定为 `true`。
 - `POST /tools/submit-return-application`：用户明确确认后提交模拟退货申请；返回申请单号、`待审核` 状态和后续步骤，不代表退款已完成；必须校验订单归属并支持幂等键。
-- `GET /agent/return-applications`：需要 `X-Role: agent`、`supervisor` 或 `implementer`，返回当前状态为 `待审核` 的退货申请，供人工审核队列展示。
-- `GET /agent/tickets`：需要客服、主管或实施管理员角色，返回人工接管工单及其当前状态。
+- `GET /agent/return-applications`：需要员工身份和 `X-Role: agent`、`supervisor` 或 `implementer`；支持 `page`、`page_size`、`keyword`、`status` 分页筛选，返回退货申请列表和 `pagination`。
+- `GET /agent/tickets`：需要员工身份和客服、主管或实施管理员角色；支持 `page`、`page_size`、`keyword`、`status`、`category` 分页筛选，返回人工接管工单列表和 `pagination`。
 - `POST /agent/tickets/{ticket_id}/resolve`：需要人工客服或主管；输入处理状态（已解决/待补充信息/已升级主管）和客服回复，保存处理结果；已处理工单不可重复更新。
 - `GET /tools/tickets/{ticket_id}`：消费者携带 `X-User-Id` 查询本人转人工工单的最新状态和客服回复；订单/用户不匹配时拒绝访问。
 - `POST /agent/return-applications/{application_id}/review`：需要 `X-Role: agent` 或 `supervisor`；输入 `decision=approved|rejected` 和可选原因。驳回时原因必填，成功后状态变为 `审核通过` 或 `审核不通过`，重复审核返回冲突错误。

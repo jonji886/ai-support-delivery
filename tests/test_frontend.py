@@ -87,6 +87,16 @@ def test_empty_chat_prompt_does_not_reference_missing_right_side_scenarios() -> 
     assert "点击下方常见问题开始咨询" in source
 
 
+def test_manual_queue_has_server_pagination_and_search_controls() -> None:
+    source = HTML.read_text(encoding="utf-8")
+    assert "queueKeyword" in source
+    assert "queueType" in source
+    assert "queueStatus" in source
+    assert "queuePrev" in source and "queueNext" in source
+    assert "page_size" in source
+    assert "loadTickets(){let tickets=[]" in source
+
+
 def test_consumer_chat_uses_bound_demo_order_without_requiring_reentry() -> None:
     source = HTML.read_text(encoding="utf-8")
     assert "const defaultOrder='OD202608001'" in source

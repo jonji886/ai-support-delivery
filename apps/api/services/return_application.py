@@ -1,4 +1,7 @@
 import logging
+import json
+import os
+import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -8,11 +11,46 @@ logger = logging.getLogger("ai_support_delivery.tool")
 
 
 class ReturnApplicationService:
-    def __init__(self, orders: Dict[str, Dict[str, Any]]) -> None:
+    def __init__(self, orders: Dict[str, Dict[str, Any]], db_path: Optional[str] = None) -> None:
         self.orders = orders
-        self.applications: Dict[str, Dict[str, Any]] = {}
-        self.keys: Dict[str, str] = {}
-        self.sequence = 1
+        self.db_path = db_path or os.getenv("SUPPORT_DB_PATH", "runtime/support.db")
+        if self.db_path != ":memory:":
+            os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
+        self._initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.db_path)
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    def _initialize(self) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """CREATE TABLE IF NOT EXISTS return_applications (
+                    application_id TEXT PRIMARY KEY,
+                    idempotency_key TEXT NOT NULL UNIQUE,
+                    user_id TEXT NOT NULL,
+                    order_id TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    next_steps TEXT NOT NULL,
+                    notice TEXT NOT NULL,
+                    submitted_at TEXT NOT NULL,
+                    reviewed_at TEXT,
+                    reviewer TEXT,
+                    review_reason TEXT
+                )"""
+            )
+
+    @staticmethod
+    def _row(row: sqlite3.Row) -> Dict[str, Any]:
+        application = dict(row)
+        application["next_steps"] = json.loads(application["next_steps"])
+        return application
+
+    def _next_id(self, connection: sqlite3.Connection) -> str:
+        row = connection.execute("SELECT COUNT(*) AS count FROM return_applications").fetchone()
+        return f"RA202608{int(row['count']) + 1:04d}"
 
     def submit(self, order_id: str, user_id: str, reason: str, key: str, trace_id: str) -> ToolResponse:
         order = self.orders.get(order_id)
@@ -20,11 +58,13 @@ class ReturnApplicationService:
             return ToolResponse.failure(trace_id, "404_ORDER_NOT_FOUND", "未找到该订单，无法提交退货申请。", 404)
         if order["anonymous_user_id"] != user_id:
             return ToolResponse.failure(trace_id, "403_ORDER_FORBIDDEN", "无权为该订单提交退货申请。", 403)
-        if key in self.keys:
-            return ToolResponse.success_result(self.applications[self.keys[key]], trace_id, "已返回同一请求创建的退货申请。")
-
-        application_id = f"RA202608{self.sequence:04d}"
-        self.sequence += 1
+        with self._connect() as connection:
+            existing = connection.execute("SELECT * FROM return_applications WHERE idempotency_key = ?", (key,)).fetchone()
+            if existing:
+                if existing["user_id"] != user_id:
+                    return ToolResponse.failure(trace_id, "409_IDEMPOTENCY_KEY_CONFLICT", "幂等键已被其他用户使用，不能复用。", 409)
+                return ToolResponse.success_result(self._row(existing), trace_id, "已返回同一请求创建的退货申请。")
+            application_id = self._next_id(connection)
         application = {
             "application_id": application_id,
             "order_id": order_id,
@@ -33,27 +73,62 @@ class ReturnApplicationService:
             "next_steps": ["等待客服审核退货申请。", "审核通过后按指引寄回商品。", "寄回后可在售后渠道查看处理进度。"],
             "notice": "退货申请已提交不代表退款已完成，最终结果以人工审核为准。",
             "submitted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "user_id": user_id,
         }
-        self.keys[key] = application_id
-        self.applications[application_id] = application
+        with self._connect() as connection:
+            connection.execute(
+                """INSERT INTO return_applications
+                (application_id, idempotency_key, user_id, order_id, reason, status, next_steps, notice, submitted_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (application_id, key, user_id, order_id, reason, application["status"], json.dumps(application["next_steps"], ensure_ascii=False), application["notice"], application["submitted_at"]),
+            )
+            application = self._row(connection.execute("SELECT * FROM return_applications WHERE application_id = ?", (application_id,)).fetchone())
         logger.info("tool_call", extra={"event": "tool_call", "tool_name": "submit_return_application", "trace_id": trace_id, "success": True, "error_code": None})
         return ToolResponse.success_result(application, trace_id, "退货申请已提交，当前状态为待审核。")
 
-    def pending(self) -> list[Dict[str, Any]]:
+    def pending(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        keyword: Optional[str] = None,
+        status: str = "待审核",
+    ) -> dict[str, Any]:
         """Return applications that are visible to the manual review queue."""
-        return [application for application in self.applications.values() if application["status"] == "待审核"]
+        page = max(page, 1)
+        page_size = min(max(page_size, 1), 100)
+        conditions = ["status = ?"]
+        values: list[Any] = [status]
+        if keyword:
+            conditions.append("(application_id LIKE ? OR order_id LIKE ? OR reason LIKE ?)")
+            pattern = f"%{keyword}%"
+            values.extend([pattern, pattern, pattern])
+        where = " AND ".join(conditions)
+        with self._connect() as connection:
+            total = connection.execute(f"SELECT COUNT(*) AS count FROM return_applications WHERE {where}", values).fetchone()["count"]
+            offset = (page - 1) * page_size
+            rows = connection.execute(
+                f"SELECT * FROM return_applications WHERE {where} ORDER BY submitted_at DESC LIMIT ? OFFSET ?",
+                [*values, page_size, offset],
+            )
+            return {"items": [self._row(row) for row in rows], "page": page, "page_size": page_size, "total": total}
 
     def get_for_user(self, application_id: str, user_id: str, trace_id: str) -> ToolResponse:
-        application = self.applications.get(application_id)
-        if application is None:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM return_applications WHERE application_id = ?", (application_id,)).fetchone()
+        if row is None:
             return ToolResponse.failure(trace_id, "404_RETURN_APPLICATION_NOT_FOUND", "未找到该退货申请。", 404)
-        order = self.orders.get(application["order_id"])
-        if order is None or order["anonymous_user_id"] != user_id:
+        application = self._row(row)
+        if application["user_id"] != user_id:
             return ToolResponse.failure(trace_id, "403_ORDER_FORBIDDEN", "无权查看该退货申请。", 403)
         return ToolResponse.success_result(application, trace_id, "已返回退货申请最新状态。")
 
     def review(self, application_id: str, reviewer: str, decision: str, reason: Optional[str], trace_id: str) -> ToolResponse:
-        application = self.applications.get(application_id)
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM return_applications WHERE application_id = ?", (application_id,)).fetchone()
+            if row is None:
+                return ToolResponse.failure(trace_id, "404_RETURN_APPLICATION_NOT_FOUND", "未找到该退货申请。", 404)
+            application = self._row(row)
         if application is None:
             return ToolResponse.failure(trace_id, "404_RETURN_APPLICATION_NOT_FOUND", "未找到该退货申请。", 404)
         if application["status"] != "待审核":
@@ -61,10 +136,13 @@ class ReturnApplicationService:
         if decision == "rejected" and not reason:
             return ToolResponse.failure(trace_id, "400_REVIEW_REASON_REQUIRED", "审核不通过时必须填写原因。", 400)
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        application["status"] = "审核通过" if decision == "approved" else "审核不通过"
-        application["reviewed_at"] = now
-        application["reviewer"] = reviewer
-        application["review_reason"] = reason or "符合退货规则，审核通过。"
-        application["next_steps"] = (["按指引寄回商品。", "寄回后在售后渠道查看处理进度。"] if decision == "approved" else ["如有异议，请补充材料或联系人工客服。"])
+        status = "审核通过" if decision == "approved" else "审核不通过"
+        review_reason = reason or "符合退货规则，审核通过。"
+        next_steps = (["按指引寄回商品。", "寄回后在售后渠道查看处理进度。"] if decision == "approved" else ["如有异议，请补充材料或联系人工客服。"])
+        with self._connect() as connection:
+            updated = connection.execute("UPDATE return_applications SET status = ?, reviewed_at = ?, reviewer = ?, review_reason = ?, next_steps = ? WHERE application_id = ? AND status = ?", (status, now, reviewer, review_reason, json.dumps(next_steps, ensure_ascii=False), application_id, "待审核"))
+            if updated.rowcount != 1:
+                return ToolResponse.failure(trace_id, "409_RETURN_APPLICATION_ALREADY_REVIEWED", "该退货申请已经审核过，不能重复操作。", 409)
+            application = self._row(connection.execute("SELECT * FROM return_applications WHERE application_id = ?", (application_id,)).fetchone())
         message = "退货申请审核通过，可按指引寄回商品。" if decision == "approved" else "退货申请审核不通过，已记录审核原因。"
         return ToolResponse.success_result(application, trace_id, message)

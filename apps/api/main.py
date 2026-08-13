@@ -1,6 +1,6 @@
 """MVP API entrypoint for the controlled order/logistics tool."""
 
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import Optional
@@ -33,6 +33,11 @@ return_application_service = ReturnApplicationService(return_service.orders)
 deepseek = DeepSeekClient()
 events = EventStore()
 conversations = ConversationStore()
+STAFF_IDENTITIES = {
+    "agent": "agent-demo-001",
+    "supervisor": "supervisor-demo-001",
+    "implementer": "implementer-demo-001",
+}
 
 
 @app.get("/health")
@@ -51,6 +56,10 @@ def record_conversation(trace_id: str, intent: str, result: ToolResponse, sessio
 
 def record_tool(tool_name: str, trace_id: str, result: ToolResponse) -> None:
     events.append(event_type="tool", tool_name=tool_name, trace_id=trace_id, success=result.success, error_code=result.error_code)
+
+
+def staff_identity_allowed(role: Optional[str], user_id: Optional[str]) -> bool:
+    return bool(role and user_id and user_id == STAFF_IDENTITIES.get(role))
 
 
 @app.post("/tools/query-order-logistics")
@@ -94,22 +103,22 @@ def search_policy(request: SearchPolicyRequest) -> JSONResponse:
 
 
 @app.post("/tools/create-service-ticket")
-def create_service_ticket(request: CreateServiceTicketRequest) -> JSONResponse:
+def create_service_ticket(request: CreateServiceTicketRequest, x_user_id: Optional[str] = Header(default=None)) -> JSONResponse:
     trace_id = new_trace_id()
     result = ticket_service.create(
         request.conversation_summary, request.category, request.priority,
-        request.order_id, request.idempotency_key, trace_id,
+        request.order_id, request.idempotency_key, trace_id, x_user_id,
     )
     events.append(event_type="tool", tool_name="create_service_ticket", trace_id=trace_id, success=result.success, error_code=result.error_code)
     return JSONResponse(status_code=result.http_status, content=result.model_dump())
 
 
 @app.post("/tools/handoff-human")
-def handoff_human(request: HandoffHumanRequest) -> JSONResponse:
+def handoff_human(request: HandoffHumanRequest, x_user_id: Optional[str] = Header(default=None)) -> JSONResponse:
     trace_id = new_trace_id()
     result = ticket_service.create(
         request.conversation_summary, request.category, request.priority,
-        request.order_id, request.idempotency_key, trace_id,
+        request.order_id, request.idempotency_key, trace_id, x_user_id,
     )
     if result.success:
         result.data["handoff_reason"] = request.reason
@@ -143,11 +152,23 @@ def submit_return_application(request: SubmitReturnApplicationRequest, x_user_id
 
 
 @app.get("/agent/return-applications")
-def agent_return_applications(x_role: Optional[str] = Header(default=None)) -> JSONResponse:
+def agent_return_applications(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=8, ge=1, le=100),
+    keyword: Optional[str] = Query(default=None, max_length=100),
+    status: str = Query(default="待审核", max_length=20),
+    x_role: Optional[str] = Header(default=None),
+    x_user_id: Optional[str] = Header(default=None),
+) -> JSONResponse:
     """Return the manual review queue for customer-service roles."""
     if x_role not in {"agent", "supervisor", "implementer"}:
         return JSONResponse(status_code=403, content={"success": False, "error_code": "403_ROLE_FORBIDDEN", "message": "需要人工客服、主管或实施人员角色。"})
-    return JSONResponse(status_code=200, content={"applications": return_application_service.pending()})
+    if not x_user_id:
+        return JSONResponse(status_code=401, content={"success": False, "error_code": "401_MISSING_USER", "message": "缺少登录身份，无法查看人工审核队列。"})
+    if not staff_identity_allowed(x_role, x_user_id):
+        return JSONResponse(status_code=403, content={"success": False, "error_code": "403_IDENTITY_FORBIDDEN", "message": "当前身份无权查看人工审核队列。"})
+    result = return_application_service.pending(page=page, page_size=page_size, keyword=keyword, status=status)
+    return JSONResponse(status_code=200, content={"applications": result["items"], "pagination": {key: result[key] for key in ("page", "page_size", "total")}})
 
 
 @app.get("/tools/return-applications/{application_id}")
@@ -162,10 +183,14 @@ def get_return_application(application_id: str, x_user_id: Optional[str] = Heade
 
 
 @app.post("/agent/return-applications/{application_id}/review")
-def review_return_application(application_id: str, request: ReviewReturnApplicationRequest, x_role: Optional[str] = Header(default=None)) -> JSONResponse:
+def review_return_application(application_id: str, request: ReviewReturnApplicationRequest, x_role: Optional[str] = Header(default=None), x_user_id: Optional[str] = Header(default=None)) -> JSONResponse:
     trace_id = new_trace_id()
     if x_role not in {"agent", "supervisor"}:
         result = ToolResponse.failure(trace_id, "403_ROLE_FORBIDDEN", "只有人工客服或主管可以审核退货申请。", 403)
+    elif not x_user_id:
+        result = ToolResponse.failure(trace_id, "401_MISSING_USER", "缺少登录身份，无法审核退货申请。", 401)
+    elif not staff_identity_allowed(x_role, x_user_id):
+        result = ToolResponse.failure(trace_id, "403_IDENTITY_FORBIDDEN", "当前身份无权审核退货申请。", 403)
     else:
         result = return_application_service.review(application_id, x_role, request.decision, request.reason, trace_id)
     record_tool("review_return_application", trace_id, result)
@@ -173,17 +198,34 @@ def review_return_application(application_id: str, request: ReviewReturnApplicat
 
 
 @app.get("/agent/tickets")
-def agent_tickets(x_role: Optional[str] = Header(default=None)) -> JSONResponse:
+def agent_tickets(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=8, ge=1, le=100),
+    keyword: Optional[str] = Query(default=None, max_length=100),
+    status: Optional[str] = Query(default=None, max_length=20),
+    category: Optional[str] = Query(default=None, max_length=50),
+    x_role: Optional[str] = Header(default=None),
+    x_user_id: Optional[str] = Header(default=None),
+) -> JSONResponse:
     if x_role not in {"agent", "supervisor", "implementer"}:
         return JSONResponse(status_code=403, content={"success": False, "error_code": "403_ROLE_FORBIDDEN", "message": "需要客服、主管或实施人员角色。"})
-    return JSONResponse(status_code=200, content={"tickets": ticket_service.list_tickets()})
+    if not x_user_id:
+        return JSONResponse(status_code=401, content={"success": False, "error_code": "401_MISSING_USER", "message": "缺少登录身份，无法查看人工工单。"})
+    if not staff_identity_allowed(x_role, x_user_id):
+        return JSONResponse(status_code=403, content={"success": False, "error_code": "403_IDENTITY_FORBIDDEN", "message": "当前身份无权查看人工工单。"})
+    result = ticket_service.list_tickets(page=page, page_size=page_size, keyword=keyword, status=status, category=category)
+    return JSONResponse(status_code=200, content={"tickets": result["items"], "pagination": {key: result[key] for key in ("page", "page_size", "total")}})
 
 
 @app.post("/agent/tickets/{ticket_id}/resolve")
-def resolve_ticket(ticket_id: str, request: ResolveTicketRequest, x_role: Optional[str] = Header(default=None)) -> JSONResponse:
+def resolve_ticket(ticket_id: str, request: ResolveTicketRequest, x_role: Optional[str] = Header(default=None), x_user_id: Optional[str] = Header(default=None)) -> JSONResponse:
     trace_id = new_trace_id()
     if x_role not in {"agent", "supervisor"}:
         result = ToolResponse.failure(trace_id, "403_ROLE_FORBIDDEN", "只有人工客服或主管可以处理工单。", 403)
+    elif not x_user_id:
+        result = ToolResponse.failure(trace_id, "401_MISSING_USER", "缺少登录身份，无法处理工单。", 401)
+    elif not staff_identity_allowed(x_role, x_user_id):
+        result = ToolResponse.failure(trace_id, "403_IDENTITY_FORBIDDEN", "当前身份无权处理工单。", 403)
     else:
         result = ticket_service.resolve(ticket_id, request.status, request.reply, trace_id)
     record_tool("resolve_service_ticket", trace_id, result)
@@ -196,6 +238,9 @@ def assist(request: AssistRequest, x_user_id: Optional[str] = Header(default=Non
     trace_id = new_trace_id()
     message = request.message
     normalized_message = re.sub(r"\s+", "", message.lower())
+    # Normalize a small, explicit set of common Chinese input variants before
+    # safety and intent routing; the original message is retained in summaries.
+    normalized_message = normalized_message.translate(str.maketrans({"貨": "货", "尋": "寻"})).replace("查寻", "查询").replace("物留", "物流")
     if conversations.session_belongs_to_other_user(request.session_id, x_user_id):
         result = ToolResponse.failure(trace_id, "403_SESSION_FORBIDDEN", "无权访问该会话。", 403)
         record_tool("handoff_human", trace_id, result)
@@ -210,7 +255,7 @@ def assist(request: AssistRequest, x_user_id: Optional[str] = Header(default=Non
     policy_signal = any(word in normalized_message for word in ("规则", "政策", "时效", "多久能到", "几天送到", "到货", "发货后", "配送", "shippingpolicy", "returnpolicy"))
     return_signal = any(word in normalized_message for word in ("退货", "换货", "能退", "退吗", "iwanttoreturn", "returnthisorder"))
     logistics_signal = any(word in normalized_message for word in ("物流", "到哪里", "到哪了", "运输", "预计", "whereismyorder", "tracking"))
-    payment_signal = any(word in message for word in ("银行卡", "收款人", "支付密码", "付款账户", "payment", "bank account"))
+    payment_signal = any(word in message for word in ("银行卡", "收款人", "支付密码", "付款账户", "支付账户", "支付账号", "payment", "bank account"))
     complaint_signal = any(word in message for word in ("投诉", "退款争议", "一直不退"))
     unsupported_signal = any(word in normalized_message for word in ("海关税费", "永久退款", "任意商品"))
     explicit_intent = "payment_sensitive" if payment_signal else "complaint" if complaint_signal or unsupported_signal else "policy" if policy_signal else "logistics" if logistics_signal or "订单号" in normalized_message else "return" if return_signal else None
@@ -319,7 +364,7 @@ def admin_events(x_role: Optional[str] = Header(default=None)) -> JSONResponse:
 
 
 def _fallback_intent(message: str) -> dict:
-    if any(word in message for word in ("银行卡", "收款人", "支付密码", "付款账户", "payment", "bank account")):
+    if any(word in message for word in ("银行卡", "收款人", "支付密码", "付款账户", "支付账户", "支付账号", "payment", "bank account")):
         return {"intent": "payment_sensitive", "confidence": 0.99, "margin": 0.5}
     if any(word in message for word in ("投诉", "退款争议", "一直不退")):
         return {"intent": "complaint", "confidence": 0.99, "margin": 0.5}
