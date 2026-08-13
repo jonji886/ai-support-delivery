@@ -34,6 +34,15 @@ def test_role_view_whitelist_is_declared() -> None:
     assert "implementer:['guide','metrics','rules']" in source
 
 
+def test_role_switcher_is_visually_prominent_and_accessible() -> None:
+    source = HTML.read_text(encoding="utf-8")
+    assert 'title="切换工作视角"' in source
+    assert 'class="role-icon"' in source
+    assert 'class="role-label">当前体验角色' in source
+    assert 'aria-label="当前体验角色"' in source
+    assert ".role:hover,.role:focus-within" in source
+
+
 def test_implementer_is_hidden_from普通_user_role_selector() -> None:
     source = HTML.read_text(encoding="utf-8")
     selector = source.split('<select id="role"', 1)[1].split('</select>', 1)[0]
@@ -108,6 +117,13 @@ def test_homepage_explains_quick_start_and_role_guides() -> None:
     assert "data-onboarding-role=\"supervisor\"" in source
     assert "data-onboarding-role=\"implementer\"" not in source
     assert "function updateOnboarding(role)" in source
+
+
+def test_homepage_uses_plain_language_for_tool_verification() -> None:
+    source = HTML.read_text(encoding="utf-8")
+    assert "从用户提问，到业务信息核实，再到人工接管" in source
+    assert "系统会先核对订单、物流和规则" in source
+    assert "Tool 核验" not in source
 
 
 def test_homepage_has_single_role_aware_primary_task_and_direct_role_actions() -> None:
