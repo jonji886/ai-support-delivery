@@ -4,6 +4,7 @@ from fastapi import FastAPI, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import Optional
+import os
 import re
 
 from apps.api.schemas import AssistRequest, CheckReturnEligibilityRequest, CreateServiceTicketRequest, HandoffHumanRequest, QueryOrderLogisticsRequest, SearchPolicyRequest, SubmitReturnApplicationRequest, ReviewReturnApplicationRequest, ResolveTicketRequest
@@ -19,9 +20,13 @@ from apps.api.support.conversations import ConversationStore
 from apps.api.support.config import INTENT_MIN_CONFIDENCE, INTENT_MIN_MARGIN
 
 app = FastAPI(title="AI Support Delivery API", version="0.1.0")
+_cors_origins = ["http://localhost:8080", "http://127.0.0.1:8080"]
+_web_public = os.environ.get("WEB_PUBLIC_ORIGIN")
+if _web_public:
+    _cors_origins.append(_web_public)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080", "http://127.0.0.1:8080"],
+    allow_origins=_cors_origins,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type", "X-User-Id", "X-Role"],
 )

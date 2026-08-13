@@ -6,7 +6,13 @@ services:
     ports:
       - "8000:8000"
     environment:
-      APP_ENV: demo
+      APP_ENV: ${APP_ENV:-demo}
+      DEEPSEEK_ENABLED: ${DEEPSEEK_ENABLED:-true}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      WEB_PUBLIC_ORIGIN: ${WEB_PUBLIC_ORIGIN:-http://localhost:8080}
+    volumes:
+      - runtime-data:/app/runtime
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
@@ -21,3 +27,7 @@ services:
       - "8080:80"
     volumes:
       - ../apps/web:/usr/share/nginx/html:ro
+    restart: unless-stopped
+
+volumes:
+  runtime-data:
