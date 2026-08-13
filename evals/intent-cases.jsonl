@@ -1,0 +1,60 @@
+{"case_id":"intent-logistics-01","category":"normal","input":"订单到哪里了","expected_intent":"logistics"}
+{"case_id":"intent-logistics-02","category":"normal","input":"帮我查下包裹","expected_intent":"logistics"}
+{"case_id":"intent-logistics-03","category":"normal","input":"物流到哪一步了","expected_intent":"logistics"}
+{"case_id":"intent-logistics-04","category":"normal","input":"我的包裹还在运输吗","expected_intent":"logistics"}
+{"case_id":"intent-logistics-05","category":"normal","input":"tracking status","expected_intent":"logistics"}
+{"case_id":"intent-logistics-06","category":"normal","input":"订单号对应的物流","expected_intent":"logistics"}
+{"case_id":"intent-logistics-07","category":"normal","input":"包裹现在到哪里","expected_intent":"logistics"}
+{"case_id":"intent-logistics-08","category":"context","input":"那预计什么时候到","previous_intent":"logistics","expected_intent":"logistics"}
+{"case_id":"intent-logistics-09","category":"context","input":"现在呢","previous_intent":"logistics","expected_intent":"logistics"}
+{"case_id":"intent-logistics-10","category":"hard_negative","input":"我的订单配送进度","expected_intent":"logistics"}
+{"case_id":"intent-return-01","category":"normal","input":"我想退货","expected_intent":"return"}
+{"case_id":"intent-return-02","category":"normal","input":"这个订单能退吗","expected_intent":"return"}
+{"case_id":"intent-return-03","category":"normal","input":"尺码不合适想退货","expected_intent":"return"}
+{"case_id":"intent-return-04","category":"normal","input":"可以换货吗","expected_intent":"return"}
+{"case_id":"intent-return-05","category":"normal","input":"return this order","expected_intent":"return"}
+{"case_id":"intent-return-06","category":"normal","input":"商品不喜欢能退吗","expected_intent":"return"}
+{"case_id":"intent-return-07","category":"normal","input":"我要办理退货","expected_intent":"return"}
+{"case_id":"intent-return-08","category":"context","input":"尺码不合适","previous_intent":"return","expected_intent":"return"}
+{"case_id":"intent-return-09","category":"context","input":"还是想退","previous_intent":"return","expected_intent":"return"}
+{"case_id":"intent-return-10","category":"hard_negative","input":"这个订单退吗","expected_intent":"return"}
+{"case_id":"intent-policy-01","category":"normal","input":"海外仓发货多久能到","expected_intent":"policy"}
+{"case_id":"intent-policy-02","category":"normal","input":"海外仓物流时效","expected_intent":"policy"}
+{"case_id":"intent-policy-03","category":"normal","input":"退货规则是什么","expected_intent":"policy"}
+{"case_id":"intent-policy-04","category":"normal","input":"退货政策适用于哪里","expected_intent":"policy"}
+{"case_id":"intent-policy-05","category":"normal","input":"shipping policy","expected_intent":"policy"}
+{"case_id":"intent-policy-06","category":"normal","input":"return policy 期限","expected_intent":"policy"}
+{"case_id":"intent-policy-07","category":"normal","input":"海外仓一般几天送到","expected_intent":"policy"}
+{"case_id":"intent-policy-08","category":"normal","input":"配送时间是多少","expected_intent":"policy"}
+{"case_id":"intent-policy-09","category":"hard_negative","input":"物流规则怎么规定","expected_intent":"policy"}
+{"case_id":"intent-policy-10","category":"hard_negative","input":"退货期限有多久","expected_intent":"policy"}
+{"case_id":"intent-complaint-01","category":"risk","input":"一直不退款我要投诉","expected_intent":"complaint","expected_risk_label":"complaint_or_dispute"}
+{"case_id":"intent-complaint-02","category":"risk","input":"退款争议投诉","expected_intent":"complaint","expected_risk_label":"complaint_or_dispute"}
+{"case_id":"intent-complaint-03","category":"risk","input":"客户一直没收到退款","expected_intent":"complaint","expected_risk_label":"complaint_or_dispute"}
+{"case_id":"intent-complaint-04","category":"risk","input":"我要投诉退款进度","expected_intent":"complaint","expected_risk_label":"complaint_or_dispute"}
+{"case_id":"intent-complaint-05","category":"risk","input":"平台支持任意商品永久退款吗","expected_intent":"complaint","expected_risk_label":"complaint_or_dispute"}
+{"case_id":"intent-complaint-06","category":"risk","input":"海关税费能不能退","expected_intent":"complaint","expected_risk_label":"complaint_or_dispute"}
+{"case_id":"intent-complaint-07","category":"multi_intent","input":"包裹没到我要投诉","expected_intent":"complaint","expected_secondary":"logistics","expected_risk_label":"complaint_or_dispute"}
+{"case_id":"intent-complaint-08","category":"multi_intent","input":"这个订单能退吗，不行我就投诉","expected_intent":"complaint","expected_secondary":"return","expected_risk_label":"complaint_or_dispute"}
+{"case_id":"intent-complaint-09","category":"risk","input":"一直不退钱","expected_intent":"complaint","expected_risk_label":"complaint_or_dispute"}
+{"case_id":"intent-complaint-10","category":"multi_intent","input":"查物流，查不到我就投诉","expected_intent":"complaint","expected_secondary":"logistics","expected_risk_label":"complaint_or_dispute"}
+{"case_id":"intent-payment-01","category":"risk","input":"帮我修改银行卡收款人","expected_intent":"payment_sensitive","expected_risk_label":"payment_sensitive"}
+{"case_id":"intent-payment-02","category":"risk","input":"我要更换支付账户","expected_intent":"payment_sensitive","expected_risk_label":"payment_sensitive"}
+{"case_id":"intent-payment-03","category":"risk","input":"支付密码被改了","expected_intent":"payment_sensitive","expected_risk_label":"payment_sensitive"}
+{"case_id":"intent-payment-04","category":"risk","input":"change my bank account","expected_intent":"payment_sensitive","expected_risk_label":"payment_sensitive"}
+{"case_id":"intent-payment-05","category":"risk","input":"更换付款账户","expected_intent":"payment_sensitive","expected_risk_label":"payment_sensitive"}
+{"case_id":"intent-payment-06","category":"risk","input":"修改支付账号","expected_intent":"payment_sensitive","expected_risk_label":"payment_sensitive"}
+{"case_id":"intent-payment-07","category":"multi_intent","input":"查物流并修改银行卡收款人","expected_intent":"payment_sensitive","expected_secondary":"logistics","expected_risk_label":"payment_sensitive"}
+{"case_id":"intent-payment-08","category":"multi_intent","input":"我想退货，退款改到另一张银行卡","expected_intent":"payment_sensitive","expected_secondary":"return","expected_risk_label":"payment_sensitive"}
+{"case_id":"intent-payment-09","category":"risk","input":"收款人信息怎么更换","expected_intent":"payment_sensitive","expected_risk_label":"payment_sensitive"}
+{"case_id":"intent-payment-10","category":"multi_intent","input":"我要投诉并修改支付账户","expected_intent":"payment_sensitive","expected_secondary":"complaint","expected_risk_label":"payment_sensitive"}
+{"case_id":"intent-unknown-01","category":"unknown","input":"这个问题很复杂请帮我处理","expected_intent":"unknown"}
+{"case_id":"intent-unknown-02","category":"unknown","input":"我有一个问题","expected_intent":"unknown"}
+{"case_id":"intent-unknown-03","category":"unknown","input":"怎么办才好","expected_intent":"unknown"}
+{"case_id":"intent-unknown-04","category":"unknown","input":"帮帮我","expected_intent":"unknown"}
+{"case_id":"intent-unknown-05","category":"unknown","input":"人工客服","expected_intent":"unknown"}
+{"case_id":"intent-unknown-06","category":"unknown","input":"商品颜色好看吗","expected_intent":"unknown"}
+{"case_id":"intent-unknown-07","category":"unknown","input":"账号怎么注册","expected_intent":"unknown"}
+{"case_id":"intent-unknown-08","category":"unknown","input":"我要咨询一下","expected_intent":"unknown"}
+{"case_id":"intent-unknown-09","category":"unknown","input":"能帮助我吗","expected_intent":"unknown"}
+{"case_id":"intent-unknown-10","category":"unknown","input":"请处理这个事情","expected_intent":"unknown"}

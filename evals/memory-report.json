@@ -1,0 +1,19 @@
+{
+  "report_version": "memory-eval-v1",
+  "total_cases": 12,
+  "passed_cases": 12,
+  "scenario_pass_rate": 1.0,
+  "cross_user_leakage_rate": 0.0,
+  "stale_slot_usage_rate": 0.0,
+  "order_correction_accuracy": 1.0,
+  "failures": [],
+  "release_gate": {
+    "thresholds": {
+      "scenario_pass_rate": 1.0,
+      "cross_user_leakage_rate": 0.0,
+      "stale_slot_usage_rate": 0.0,
+      "order_correction_accuracy": 1.0
+    },
+    "passed": true
+  }
+}

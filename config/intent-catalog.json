@@ -1,0 +1,103 @@
+{
+  "version": "intent-catalog-v1",
+  "owner": "after-sales-ai-product",
+  "decision_policy": {
+    "risk_first": true,
+    "multi_intent_mode": "primary_with_secondary",
+    "unknown_intent": "unknown",
+    "minimum_confidence": 0.70,
+    "minimum_margin": 0.10
+  },
+  "intents": [
+    {
+      "intent_id": "payment_sensitive",
+      "display_name": "支付敏感操作",
+      "description": "用户要求修改支付账户、银行卡、收款人或支付凭证；必须停止自动处置。",
+      "owner": "risk-operations",
+      "risk_level": "critical",
+      "priority": 100,
+      "required_slots": [],
+      "allowed_tools": ["create_service_ticket", "handoff_human"],
+      "forbidden_tools": ["query_order_logistics", "check_return_eligibility", "submit_return_application", "search_policy"],
+      "risk_labels": ["payment_sensitive"],
+      "signals": ["银行卡", "收款人", "支付密码", "付款账户", "支付账户", "支付账号", "payment", "bank account"],
+      "positive_examples": ["帮我修改银行卡收款人", "我要更换支付账户"],
+      "hard_negative_examples": ["支持哪些支付方式", "退款多久到账"]
+    },
+    {
+      "intent_id": "complaint",
+      "display_name": "投诉与退款争议",
+      "description": "用户明确投诉、退款争议、长期未退款，或提出知识库无法安全支持的绝对退款主张。",
+      "owner": "customer-care-escalation",
+      "risk_level": "high",
+      "priority": 90,
+      "required_slots": [],
+      "allowed_tools": ["create_service_ticket", "handoff_human"],
+      "forbidden_tools": ["submit_return_application"],
+      "risk_labels": ["complaint_or_dispute"],
+      "signals": ["投诉", "退款争议", "一直不退", "没收到退款", "永久退款", "任意商品", "海关税费"],
+      "positive_examples": ["一直不退款，我要投诉", "退款争议投诉"],
+      "hard_negative_examples": ["退货规则是什么", "退款一般多久到账"]
+    },
+    {
+      "intent_id": "logistics",
+      "display_name": "具体订单物流查询",
+      "description": "用户询问本人具体订单或包裹的实时状态、节点或预计到达时间。",
+      "owner": "fulfillment-support",
+      "risk_level": "low",
+      "priority": 60,
+      "required_slots": ["order_id", "user_id"],
+      "allowed_tools": ["query_order_logistics", "handoff_human"],
+      "forbidden_tools": ["submit_return_application", "create_service_ticket"],
+      "risk_labels": [],
+      "signals": ["物流", "包裹", "到哪里", "到哪了", "运输", "配送进度", "预计", "tracking", "where is my order", "订单号"],
+      "positive_examples": ["我的包裹到哪里了", "查一下这个订单物流"],
+      "hard_negative_examples": ["海外仓物流时效", "配送规则是什么"]
+    },
+    {
+      "intent_id": "return",
+      "display_name": "具体订单退货资格",
+      "description": "用户针对具体订单表达退换货意愿或询问是否符合退货资格。",
+      "owner": "returns-operations",
+      "risk_level": "medium",
+      "priority": 50,
+      "required_slots": ["order_id", "user_id", "return_reason"],
+      "allowed_tools": ["check_return_eligibility", "handoff_human"],
+      "forbidden_tools": ["submit_return_application", "query_order_logistics"],
+      "risk_labels": [],
+      "signals": ["退货", "换货", "能退", "退吗", "想退", "return this order", "i want to return"],
+      "positive_examples": ["这个订单能退吗", "尺码不合适想退货"],
+      "hard_negative_examples": ["退货规则适用于哪个地区", "return policy"]
+    },
+    {
+      "intent_id": "policy",
+      "display_name": "通用规则问答",
+      "description": "用户询问不依赖具体订单实时状态的物流时效、退货期限或售后规则。",
+      "owner": "knowledge-operations",
+      "risk_level": "low",
+      "priority": 70,
+      "required_slots": [],
+      "allowed_tools": ["search_policy", "handoff_human"],
+      "forbidden_tools": ["query_order_logistics", "check_return_eligibility", "submit_return_application"],
+      "risk_labels": [],
+      "signals": ["规则", "政策", "时效", "多久能到", "几天送到", "海外仓", "发货后", "配送时间", "退货期限", "shipping policy", "return policy", "shippingpolicy", "returnpolicy"],
+      "positive_examples": ["海外仓发货多久能到", "退货规则是什么"],
+      "hard_negative_examples": ["我的包裹到哪里了", "这个订单能退吗"]
+    },
+    {
+      "intent_id": "unknown",
+      "display_name": "无法可靠识别",
+      "description": "现有意图目录无法可靠覆盖或候选分差不足的问题。",
+      "owner": "ai-quality-operations",
+      "risk_level": "unknown",
+      "priority": 0,
+      "required_slots": [],
+      "allowed_tools": ["handoff_human", "create_service_ticket"],
+      "forbidden_tools": ["query_order_logistics", "check_return_eligibility", "submit_return_application", "search_policy"],
+      "risk_labels": ["low_confidence"],
+      "signals": [],
+      "positive_examples": ["这个问题很复杂，请帮我处理"],
+      "hard_negative_examples": ["订单到哪里了", "我想退货"]
+    }
+  ]
+}

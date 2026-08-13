@@ -2,7 +2,11 @@
 
 ## `POST /assist`
 
-统一对话入口由 LangGraph 状态图编排。输入仍使用 `AssistRequest`，响应仍使用统一 Tool 响应结构；编排迁移不改变 HTTP 契约。图节点只能调用白名单业务 Service，订单归属、写操作确认、幂等和人工转接约束仍由 API/Tool 契约强制执行。`session_id` 的跨请求上下文由 SQLite `ConversationStore` 持久化并按用户隔离。
+统一对话入口由 LangGraph 状态图编排。输入仍使用 `AssistRequest`，响应仍使用统一 Tool 响应结构；编排迁移不改变 HTTP 契约。图节点只能调用 Intent Catalog 允许的白名单业务 Service，订单归属、写操作确认、幂等和人工转接约束仍由 API/Tool 契约强制执行。`session_id` 的跨请求上下文由 SQLite `ConversationStore` 持久化并按用户隔离。
+
+`message` 中的表达和结构化请求字段不具有相同权威性：本轮 `order_id`/`return_reason` 高于会话继承状态；显式切换 `order_id` 会使旧订单作用域下的退货原因和已验证事实失效，并重置上一意图与连续未解决计数。过期槽位不会进入路由或 Tool 参数。跨用户复用同一 `session_id` 返回 `403_SESSION_FORBIDDEN`。
+
+意图目录的主意图决定当前路由，次意图用于人工摘要。`complaint` 和 `payment_sensitive` 抢占普通意图；最终节点再次校验主意图是否允许当前 Tool，配置冲突返回 `500_INTENT_TOOL_POLICY_VIOLATION` 且停止自动处理。当前公开响应体不暴露内部槽位或分类分数，目录版本、次意图和风险标签记录在 Trace/人工摘要中，避免把内部策略变成客户端稳定契约。
 
 ## `POST /tools/query-order-logistics`
 

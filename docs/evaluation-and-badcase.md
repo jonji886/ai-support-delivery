@@ -186,6 +186,9 @@ flowchart LR
 
 ```bash
 python3 evals/validate_dataset.py
+python3 evals/run_intent_eval.py
+python3 evals/run_memory_eval.py
+python3 evals/run_policy_eval.py
 python3 evals/run_eval.py
 python3 -m pytest -q
 ```
@@ -218,6 +221,20 @@ Badcase 在开发集上定位并修复，代表性样本进入固定回归集；
 当前本地结果没有证明组件越多越好：lexical 与 fusion 在固定回归集均为 100%，确定性 vector-only 为 75.00%，fusion+测试 lexical reranker 为 97.50%。因此本地默认 `fusion`，而不是为了架构完整度强行启用 reranker。挑战集 `fusion` 为 76.67%，如实体现当前 POC 的泛化缺口。
 
 专项指标包括 `Recall@5`、检索 Top1、接受答案准确率、`unsupported_rejection_rate`、过期版本泄漏率和 P95。使用 `python3 evals/run_policy_eval.py` 生成 `evals/policy-report.json`；发布门禁使用固定回归集，生产评测还必须记录 embedding、索引、reranker 和知识版本。
+
+### 意图目录专项评测
+
+`evals/intent-cases.jsonl` 当前包含 60 条固定样本，六类意图各 10 条，并覆盖 hard negative、上下文追问、多意图和高风险组合。`python3 evals/run_intent_eval.py` 根据同一版本 Intent Catalog 分类并生成 `evals/intent-report.json`，包括混淆矩阵、逐意图 Precision/Recall/F1、主意图准确率、高风险召回率和多意图次意图召回率。
+
+为什么不能只看整体准确率：投诉错成物流可能放过风险，物流错成投诉主要损失自动化率，两者业务成本不同。当前门禁因此要求准确率不低于 95%、投诉/支付敏感召回率为 100%、次意图召回率不低于 90%。目录边界、信号或模型策略变更后必须重跑；hard negative 用来防止看到“退货”就把“退货期限多久”错当成具体退货申请。
+
+当前报告为 60/60、高风险召回 100%、次意图召回 100%。它验证的是确定性安全路由和目录边界，不是生产模型泛化成绩；启用真实 DeepSeek 后还需建立模型分层集、记录模型/Prompt 版本，并比较目录回退前后的混淆矩阵。
+
+### 短期状态专项评测
+
+`evals/memory-cases.json` 定义 12 个确定性场景，覆盖订单/退货原因继承、槽位来源和作用域、Tool 已验证事实、用户纠正、订单切换、各类 TTL、跨用户隔离与会话过期。`python3 evals/run_memory_eval.py` 使用可注入时钟和临时 SQLite 运行，并生成 `evals/memory-report.json`。
+
+门禁要求场景通过率和订单纠正准确率为 100%，跨用户泄漏率与陈旧槽位误用率均为 0%。这是因为一次串用户或串订单不能被其他十一次成功平均掉。当前为 12/12；该结果验证状态流转契约，不覆盖生产数据库并发、容量、备份与租户隔离。
 
 ## 九、面试中如何讲这套方法
 

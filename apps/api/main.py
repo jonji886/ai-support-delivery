@@ -14,6 +14,7 @@ from apps.api.services.return_eligibility import ReturnEligibilityService
 from apps.api.services.ticket import TicketService
 from apps.api.services.return_application import ReturnApplicationService
 from apps.api.services.deepseek import DeepSeekClient
+from apps.api.services.intent_catalog import IntentCatalog
 from apps.api.support.responses import ToolResponse, new_trace_id
 from apps.api.support.events import EventStore
 from apps.api.support.conversations import ConversationStore
@@ -41,6 +42,7 @@ deepseek = DeepSeekClient()
 events = EventStore(os.getenv("EVENTS_DB_PATH", "runtime/events.db"))
 traces = TraceStore()
 conversations = ConversationStore()
+intent_catalog = IntentCatalog.from_default_data()
 STAFF_IDENTITIES = {
     "agent": "agent-demo-001",
     "supervisor": "supervisor-demo-001",
@@ -110,6 +112,7 @@ support_graph = build_support_graph(
         record_tool=record_tool,
         record_conversation=record_conversation,
         observability=traces,
+        intents=intent_catalog,
     )
 )
 

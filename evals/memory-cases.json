@@ -1,0 +1,14 @@
+[
+  {"case_id":"memory-order-inherit","scenario":"inherit_order","expected":"OD202608001"},
+  {"case_id":"memory-reason-inherit","scenario":"inherit_reason","expected":"尺码不合适"},
+  {"case_id":"memory-order-source","scenario":"slot_source","slot":"order_id","expected":"user_explicit"},
+  {"case_id":"memory-reason-scope","scenario":"slot_scope","slot":"return_reason","expected":"OD202608001"},
+  {"case_id":"memory-tool-fact-source","scenario":"verified_fact_source","expected":"tool_verified"},
+  {"case_id":"memory-order-correction","scenario":"order_correction","expected":"OD202608009"},
+  {"case_id":"memory-correction-clears-reason","scenario":"correction_clears_reason","expected":null},
+  {"case_id":"memory-correction-clears-fact","scenario":"correction_clears_fact","expected":false},
+  {"case_id":"memory-slot-expiry","scenario":"reason_expiry","expected":null},
+  {"case_id":"memory-intent-expiry","scenario":"intent_expiry","expected":null},
+  {"case_id":"memory-cross-user","scenario":"cross_user_isolation","expected":true},
+  {"case_id":"memory-session-expiry","scenario":"session_expiry","expected":null}
+]

@@ -28,6 +28,9 @@ class SupportState(TypedDict, total=False):
     confidence: float
     margin: float
     decision_source: str
+    secondary_intents: list[str]
+    risk_labels: list[str]
+    catalog_version: str
     result: ToolResponse
     tool_name: str
     conversation_intent: str
@@ -46,6 +49,7 @@ class SupportGraphDependencies:
     record_tool: Callable[[str, str, ToolResponse], None]
     record_conversation: Callable[[str, str, ToolResponse, Optional[str]], None]
     observability: Any
+    intents: Any
 
 
 REQUIRED_GRAPH_NODES = {
@@ -63,20 +67,6 @@ REQUIRED_GRAPH_NODES = {
 def _normalize_message(message: str) -> str:
     normalized = re.sub(r"\s+", "", message.lower())
     return normalized.translate(str.maketrans({"貨": "货", "尋": "寻"})).replace("查寻", "查询").replace("物留", "物流")
-
-
-def _fallback_intent(message: str) -> dict[str, Any]:
-    if any(word in message for word in ("银行卡", "收款人", "支付密码", "付款账户", "支付账户", "支付账号", "payment", "bank account")):
-        return {"intent": "payment_sensitive", "confidence": 0.99, "margin": 0.5}
-    if any(word in message for word in ("投诉", "退款争议", "一直不退", "没收到退款")):
-        return {"intent": "complaint", "confidence": 0.99, "margin": 0.5}
-    if any(word in message for word in ("物流", "包裹", "到哪里", "到哪了", "运输")):
-        return {"intent": "logistics", "confidence": 0.95, "margin": 0.3}
-    if any(word in message for word in ("规则", "政策", "时效", "多久可以退")):
-        return {"intent": "policy", "confidence": 0.9, "margin": 0.2}
-    if any(word in message for word in ("退货", "换货", "能退", "退吗", "想退")):
-        return {"intent": "return", "confidence": 0.95, "margin": 0.3}
-    return {"intent": "unknown", "confidence": 0.4, "margin": 0.05}
 
 
 def _extract_return_reason(message: str) -> Optional[str]:
@@ -98,6 +88,17 @@ def build_support_graph(deps: SupportGraphDependencies) -> Any:
                 "record_conversation": False,
             }
         session = deps.conversations.get(request.session_id, user_id)
+        if request.order_id and session and session.get("order_id") and request.order_id != session["order_id"]:
+            # Explicit request data has higher authority than inherited memory.
+            # Do not let old order-scoped slots influence the switching turn.
+            session = dict(session)
+            session["return_reason"] = None
+            session["slots"] = {
+                name: slot for name, slot in (session.get("slots") or {}).items()
+                if slot.get("scope") != "order"
+            }
+            session["last_intent"] = None
+            session["unresolved_count"] = 0
         return {
             "normalized_message": _normalize_message(request.message),
             "session": session,
@@ -114,34 +115,31 @@ def build_support_graph(deps: SupportGraphDependencies) -> Any:
         message = request.message
         normalized = state["normalized_message"]
         previous_intent = state.get("previous_intent")
-        follow_up = any(normalized.startswith(prefix) for prefix in ("那", "还", "继续", "然后", "现在", "这个", "它")) or normalized in {"呢", "怎么办", "怎么处理"}
-        policy_signal = any(word in normalized for word in ("规则", "政策", "时效", "多久能到", "几天送到", "到货", "发货后", "配送", "shippingpolicy", "returnpolicy"))
-        return_signal = any(word in normalized for word in ("退货", "换货", "能退", "退吗", "想退", "iwanttoreturn", "returnthisorder"))
-        logistics_signal = any(word in normalized for word in ("物流", "包裹", "到哪里", "到哪了", "运输", "预计", "whereismyorder", "tracking"))
-        payment_signal = any(word in message for word in ("银行卡", "收款人", "支付密码", "付款账户", "支付账户", "支付账号", "payment", "bank account"))
-        complaint_signal = any(word in message for word in ("投诉", "退款争议", "一直不退", "没收到退款"))
-        unsupported_signal = any(word in normalized for word in ("海关税费", "永久退款", "任意商品"))
-        explicit_intent = "payment_sensitive" if payment_signal else "complaint" if complaint_signal or unsupported_signal else "policy" if policy_signal else "logistics" if logistics_signal or "订单号" in normalized else "return" if return_signal else None
-        if explicit_intent is None and follow_up and previous_intent in {"logistics", "return", "policy"}:
-            explicit_intent = previous_intent
-        if explicit_intent is None and previous_intent in {"logistics", "return", "policy"} and len(normalized) <= 12:
-            explicit_intent = previous_intent
-        decision_source = "deterministic_rule"
-        if explicit_intent:
-            decision = {"intent": explicit_intent, "confidence": 0.99, "margin": 0.5}
-        else:
+        decision = deps.intents.classify(message, previous_intent)
+        decision_source = decision["source"]
+        if decision["intent"] == "unknown":
             model_decision = None
             if deps.model.enabled:
                 with deps.observability.span("model.deepseek.classify", kind="client", attributes={"model.provider": "deepseek", "model.name": deps.model.model, "model.operation": "intent_classification"}) as model_span:
                     model_decision = deps.model.classify(message, state["trace_id"])
                     model_span.set_result(model_decision is not None, "MODEL_CALL_FAILED" if model_decision is None else None, fallback_used=model_decision is None)
-            decision = model_decision or _fallback_intent(message)
-            decision_source = "model" if model_decision else "fallback_rule"
+            if model_decision and deps.intents.is_known(model_decision["intent"]):
+                decision = {
+                    **decision,
+                    **model_decision,
+                    "secondary_intents": [],
+                    "risk_labels": deps.intents.get(model_decision["intent"])["risk_labels"],
+                    "catalog_version": deps.intents.version,
+                }
+                decision_source = "model_catalog_constrained"
         return {
             "intent": decision["intent"],
             "confidence": float(decision["confidence"]),
             "margin": float(decision["margin"]),
             "decision_source": decision_source,
+            "secondary_intents": decision.get("secondary_intents", []),
+            "risk_labels": decision.get("risk_labels", []),
+            "catalog_version": decision.get("catalog_version", deps.intents.version),
         }
 
     def route_intent(state: SupportState) -> str:
@@ -163,7 +161,15 @@ def build_support_graph(deps: SupportGraphDependencies) -> Any:
             ticket = deps.tickets.create(f"用户诉求：{request.message}", "low_confidence", "high", order_id, f"assist-{trace_id}", trace_id, state.get("user_id"))
             tool_span.set_result(ticket.success, ticket.error_code)
         ticket.data["handoff_reason"] = "意图置信度不足，无法安全确认"
-        ticket.data["summary"] = {"user_request": request.message, "order_id": order_id, "actions_taken": [], "handoff_reason": "意图置信度不足，无法安全确认"}
+        ticket.data["summary"] = {
+            "user_request": request.message,
+            "order_id": order_id,
+            "actions_taken": [],
+            "handoff_reason": "意图置信度不足，无法安全确认",
+            "secondary_intents": state.get("secondary_intents", []),
+            "risk_labels": state.get("risk_labels", []),
+            "intent_catalog_version": state.get("catalog_version"),
+        }
         ticket.message = "目前无法可靠确认您的问题类型，已转人工处理。"
         ticket.handoff = True
         return _outcome(ticket, "handoff_human", "unknown", request, state, intent="unknown", resolved=False)
@@ -179,7 +185,15 @@ def build_support_graph(deps: SupportGraphDependencies) -> Any:
             ticket = deps.tickets.create(f"用户诉求：{request.message}", category, "urgent", order_id, f"assist-{trace_id}", trace_id, state.get("user_id"))
             tool_span.set_result(ticket.success, ticket.error_code)
         ticket.data["handoff_reason"] = reason
-        ticket.data["summary"] = {"user_request": request.message, "order_id": order_id, "actions_taken": ["识别支付敏感意图" if intent == "payment_sensitive" else "识别高风险意图", "创建售后工单"], "handoff_reason": reason}
+        ticket.data["summary"] = {
+            "user_request": request.message,
+            "order_id": order_id,
+            "actions_taken": ["识别支付敏感意图" if intent == "payment_sensitive" else "识别高风险意图", "创建售后工单"],
+            "handoff_reason": reason,
+            "secondary_intents": state.get("secondary_intents", []),
+            "risk_labels": state.get("risk_labels", []),
+            "intent_catalog_version": state.get("catalog_version"),
+        }
         ticket.message = "该问题涉及支付敏感信息，已停止自动处理并创建人工工单。" if intent == "payment_sensitive" else "该问题需要人工处理，已创建售后工单。"
         ticket.handoff = True
         return _outcome(ticket, "create_service_ticket", intent, request, state, intent=intent, resolved=False)
@@ -257,6 +271,13 @@ def build_support_graph(deps: SupportGraphDependencies) -> Any:
 
     def finalize(state: SupportState) -> SupportState:
         result = state["result"]
+        intent = state.get("conversation_intent", state.get("intent", "unknown"))
+        if not deps.intents.is_tool_allowed(intent, state["tool_name"]):
+            result = ToolResponse.failure(
+                state["trace_id"], "500_INTENT_TOOL_POLICY_VIOLATION",
+                "意图与 Tool 权限策略冲突，已停止自动处理。", 500,
+            )
+            state["result"] = result
         deps.record_tool(state["tool_name"], state["trace_id"], result)
         if state.get("record_conversation", True):
             deps.record_conversation(state["trace_id"], state.get("conversation_intent", state.get("intent", "unknown")), result, state["request"].session_id)
@@ -271,6 +292,9 @@ def build_support_graph(deps: SupportGraphDependencies) -> Any:
                 node_span.set_attributes(
                     intent=update.get("intent") or state.get("intent"),
                     decision_source=update.get("decision_source"),
+                    catalog_version=update.get("catalog_version"),
+                    secondary_intents=update.get("secondary_intents"),
+                    risk_labels=update.get("risk_labels"),
                     tool_name=update.get("tool_name"),
                 )
                 return update
@@ -295,6 +319,21 @@ def build_support_graph(deps: SupportGraphDependencies) -> Any:
 
 
 def _outcome(result: ToolResponse, tool_name: str, conversation_intent: str, request: AssistRequest, state: SupportState, **session_values: Any) -> SupportState:
+    slot_sources = dict(session_values.pop("slot_sources", {}))
+    if request.order_id:
+        previous_order_id = (state.get("session") or {}).get("order_id")
+        slot_sources["order_id"] = "user_correction" if previous_order_id and previous_order_id != request.order_id else "user_explicit"
+    elif state.get("effective_order_id"):
+        slot_sources["order_id"] = "conversation_inherited"
+    if request.return_reason or _extract_return_reason(request.message):
+        slot_sources["return_reason"] = "user_explicit"
+    elif session_values.get("return_reason"):
+        slot_sources["return_reason"] = "conversation_inherited"
+    verified_facts = session_values.pop("verified_facts", {})
+    if result.success and tool_name == "query_order_logistics":
+        verified_facts["logistics"] = result.data
+    if result.success and tool_name == "check_return_eligibility":
+        verified_facts["return"] = result.data
     return {
         "result": result,
         "tool_name": tool_name,
@@ -303,6 +342,8 @@ def _outcome(result: ToolResponse, tool_name: str, conversation_intent: str, req
         "session_update": {
             "user_id": state.get("user_id"),
             "order_id": state.get("effective_order_id"),
+            "slot_sources": slot_sources,
+            "verified_facts": verified_facts,
             **session_values,
         },
     }

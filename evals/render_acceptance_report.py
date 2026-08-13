@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def render() -> None:
     report = json.loads((ROOT / "evals/latest-report.json").read_text(encoding="utf-8"))
     rag_report = json.loads((ROOT / "evals/policy-report.json").read_text(encoding="utf-8"))
+    intent_report = json.loads((ROOT / "evals/intent-report.json").read_text(encoding="utf-8"))
+    memory_report = json.loads((ROOT / "evals/memory-report.json").read_text(encoding="utf-8"))
     cases = [
         json.loads(line)
         for line in (ROOT / "evals/mvp-50.jsonl").read_text(encoding="utf-8").splitlines()
@@ -47,6 +49,10 @@ def render() -> None:
 | 高风险转人工覆盖率 | {handoff:.2f}% | ≥ 95% | {handoff_status} |
 | Tool 成功率 | {tool:.2f}% | ≥ 95% | {tool_status} |
 | 本地 TestClient P95 | 约 {p95:.2f}ms | ≤ 10 秒 | 达标 |
+| 意图目录固定集 | {intent_report['passed_cases']}/{intent_report['total_cases']}，{intent_report['accuracy'] * 100:.2f}% | ≥ 95% | {'达标' if intent_report['release_gate']['passed'] else '未达标'} |
+| 高风险意图召回率 | {intent_report['high_risk_recall'] * 100:.2f}% | 100% | {'达标' if intent_report['high_risk_recall'] == 1 else '未达标'} |
+| 短期状态场景通过率 | {memory_report['passed_cases']}/{memory_report['total_cases']}，{memory_report['scenario_pass_rate'] * 100:.2f}% | 100% | {'达标' if memory_report['release_gate']['passed'] else '未达标'} |
+| 跨用户/陈旧状态误用率 | {memory_report['cross_user_leakage_rate'] * 100:.2f}% / {memory_report['stale_slot_usage_rate'] * 100:.2f}% | 0% / 0% | {'达标' if memory_report['release_gate']['passed'] else '未达标'} |
 
 当前结论：四类核心流程可以本地演示；高风险路由和部分异常场景是否达到试点标准，以以上指标和 SPEC 阻断条件为准。该结果不代表客户生产收益。
 
@@ -55,6 +61,12 @@ def render() -> None:
 当前固定集共 {total} 条：正常主流程 {counts['normal']}、业务边界 {counts['boundary']}、Tool 异常 {counts['tool_error']}、风险与转人工 {counts['risk']}、知识无依据/版本冲突 {counts['knowledge']}。每条用例校验允许的 Tool 调用、预期事实或引用、是否转人工，并对支付敏感工单分类和规则版本进行结构化断言。
 
 另有自动化回归验证：每个 `/assist` 请求可用 `trace_id` 回放 LangGraph 节点及 Tool/RAG 子 Span；受控失败记录错误码，未处理异常记录失败根链路；窗口聚合返回端到端及操作级耗时、失败率、慢链路和最近失败链路。该观测回归不计入上述 {total} 条业务评测通过率。
+
+## 意图与短期状态专项结果
+
+Intent Catalog 专项固定集共 {intent_report['total_cases']} 条，覆盖六类意图、hard negative、上下文追问、多意图和高风险组合；主意图准确率 {intent_report['accuracy'] * 100:.2f}%、高风险召回率 {intent_report['high_risk_recall'] * 100:.2f}%、次意图召回率 {intent_report['multi_intent_secondary_recall'] * 100:.2f}%，门禁{'通过' if intent_report['release_gate']['passed'] else '未通过'}。该结果验证确定性安全路由与目录边界，不代表真实外部模型的生产泛化效果。
+
+短期状态专项共 {memory_report['total_cases']} 个场景，覆盖继承、来源/作用域、Tool 已验证事实、用户纠正、订单切换、过期和跨用户隔离；跨用户泄漏率 {memory_report['cross_user_leakage_rate'] * 100:.2f}%、陈旧槽位误用率 {memory_report['stale_slot_usage_rate'] * 100:.2f}%、订单纠正准确率 {memory_report['order_correction_accuracy'] * 100:.2f}%，门禁{'通过' if memory_report['release_gate']['passed'] else '未通过'}。该结果不覆盖生产数据库容量、并发与多租户能力。
 
 ## RAG 专项结果
 
@@ -73,6 +85,8 @@ RAG 专项集共 100 条：开发集 30 条、固定回归集 40 条、挑战集
 - 当前前端仍是演示工作台，不包含真实登录、客服自动分配和生产级实时质量看板；会话、工单、退货申请、质量事件和本地 Trace/Span 已使用 SQLite 持久化。
 - 本地 TraceStore 尚未接入外部观测后端、告警推送、采样、自动保留和跨服务上下文传播。
 - RAG 本地评测使用确定性 embedding/reranker Provider，不代表生产模型效果。
+- 意图专项目前评测目录的确定性安全路由；真实 DeepSeek/其他模型仍需按模型与 Prompt 版本建立独立数据切片和灰度报告。
+- Intent Catalog 当前为仓库内 JSON，尚无运营后台、审批流和在线灰度；短期状态使用 SQLite，尚无生产级 Schema 迁移、并发和多租户治理。
 - 当前规则检索仍是内存线性扫描 POC，生产索引、增量入库、真实 Provider 容量与故障验证尚未完成。
 
 ## 验收边界

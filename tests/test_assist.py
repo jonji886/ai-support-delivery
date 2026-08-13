@@ -38,6 +38,20 @@ def test_assist_core_colloquial_routes_do_not_require_model() -> None:
     assert complaint.json()["data"]["category"] == "complaint_or_dispute"
 
 
+def test_multi_intent_risk_signal_preempts_normal_tool() -> None:
+    response = client.post(
+        "/assist",
+        json={"message": "包裹一直没到，我要投诉", "order_id": "OD202608001"},
+        headers={"X-User-Id": "user-demo-001"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["category"] == "complaint_or_dispute"
+    assert response.json()["handoff"] is True
+    assert response.json()["data"]["summary"]["secondary_intents"] == ["logistics"]
+    assert response.json()["data"]["summary"]["intent_catalog_version"] == "intent-catalog-v1"
+
+
 def test_assist_complaint_handoffs_and_creates_ticket() -> None:
     response = client.post("/assist", json={"message": "一直不退款，我要投诉", "order_id": "OD202608001"})
     body = response.json()
@@ -89,6 +103,34 @@ def test_follow_up_can_supply_missing_return_reason() -> None:
     assert first.status_code == 400
     assert second.status_code == 200
     assert second.json()["data"]["decision"] == "eligible"
+
+
+def test_explicit_order_switch_does_not_reuse_old_return_reason(monkeypatch) -> None:
+    from apps.api.main import conversations
+
+    session_id = "conversation-order-switch-" + uuid4().hex
+    conversations.save(
+        session_id, user_id="user-demo-001", order_id="OD202608001", intent="return", resolved=False,
+        return_reason="尺码不合适", slot_sources={"order_id": "user_explicit", "return_reason": "user_explicit"},
+    )
+    # Use a same-user synthetic order to isolate memory behavior from ownership.
+    from apps.api.main import return_service
+    original = return_service.orders.get("OD202608009")
+    return_service.orders["OD202608009"] = {**return_service.orders["OD202608001"], "order_id": "OD202608009"}
+    try:
+        response = client.post(
+            "/assist",
+            json={"message": "这个订单能退吗", "order_id": "OD202608009", "session_id": session_id},
+            headers={"X-User-Id": "user-demo-001"},
+        )
+    finally:
+        if original is None:
+            return_service.orders.pop("OD202608009", None)
+        else:
+            return_service.orders["OD202608009"] = original
+
+    assert response.status_code == 400
+    assert "退货原因" in response.json()["message"]
 
 
 def test_two_unresolved_turns_trigger_handoff() -> None:

@@ -48,7 +48,7 @@ class DeepSeekClient:
             "max_tokens": 30,
             "response_format": {"type": "json_object"},
             "messages": [
-                {"role": "system", "content": '你是售后意图分类器。只输出 JSON：{"intent":"logistics|return|policy|complaint|unknown","confidence":0到1,"margin":0到1}。投诉、退款争议、支付问题归类 complaint。'},
+                {"role": "system", "content": '你是售后意图分类器。只输出 JSON：{"intent":"logistics|return|policy|complaint|payment_sensitive|unknown","confidence":0到1,"margin":0到1}。只允许目录中的意图；支付账户、银行卡或收款信息归类 payment_sensitive，投诉和退款争议归类 complaint。'},
                 {"role": "user", "content": message},
             ],
         }
@@ -64,7 +64,7 @@ class DeepSeekClient:
             intent = json.loads(content).get("intent")
             confidence = float(json.loads(content).get("confidence", 0))
             margin = float(json.loads(content).get("margin", 1))
-            if intent in {"logistics", "return", "policy", "complaint", "unknown"}:
+            if intent in {"logistics", "return", "policy", "complaint", "payment_sensitive", "unknown"}:
                 logger.info("model_call", extra={"event": "model_call", "provider": "deepseek", "model": self.model, "trace_id": trace_id, "success": True})
                 return {"intent": intent, "confidence": confidence, "margin": margin}
         except (httpx.HTTPError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:

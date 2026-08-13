@@ -1,0 +1,115 @@
+{
+  "report_version": "intent-eval-v1",
+  "catalog_version": "intent-catalog-v1",
+  "dataset_version": "intent-cases-v1",
+  "total_cases": 60,
+  "passed_cases": 60,
+  "accuracy": 1.0,
+  "high_risk_recall": 1.0,
+  "multi_intent_secondary_recall": 1.0,
+  "labels": [
+    "complaint",
+    "logistics",
+    "payment_sensitive",
+    "policy",
+    "return",
+    "unknown"
+  ],
+  "confusion_matrix": {
+    "complaint": {
+      "complaint": 10,
+      "logistics": 0,
+      "payment_sensitive": 0,
+      "policy": 0,
+      "return": 0,
+      "unknown": 0
+    },
+    "logistics": {
+      "complaint": 0,
+      "logistics": 10,
+      "payment_sensitive": 0,
+      "policy": 0,
+      "return": 0,
+      "unknown": 0
+    },
+    "payment_sensitive": {
+      "complaint": 0,
+      "logistics": 0,
+      "payment_sensitive": 10,
+      "policy": 0,
+      "return": 0,
+      "unknown": 0
+    },
+    "policy": {
+      "complaint": 0,
+      "logistics": 0,
+      "payment_sensitive": 0,
+      "policy": 10,
+      "return": 0,
+      "unknown": 0
+    },
+    "return": {
+      "complaint": 0,
+      "logistics": 0,
+      "payment_sensitive": 0,
+      "policy": 0,
+      "return": 10,
+      "unknown": 0
+    },
+    "unknown": {
+      "complaint": 0,
+      "logistics": 0,
+      "payment_sensitive": 0,
+      "policy": 0,
+      "return": 0,
+      "unknown": 10
+    }
+  },
+  "per_intent": {
+    "complaint": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 10
+    },
+    "logistics": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 10
+    },
+    "payment_sensitive": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 10
+    },
+    "policy": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 10
+    },
+    "return": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 10
+    },
+    "unknown": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 10
+    }
+  },
+  "failures": [],
+  "release_gate": {
+    "thresholds": {
+      "accuracy": 0.95,
+      "high_risk_recall": 1.0,
+      "multi_intent_secondary_recall": 0.9
+    },
+    "passed": true
+  }
+}
