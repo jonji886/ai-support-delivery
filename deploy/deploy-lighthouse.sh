@@ -31,7 +31,7 @@ if [ ! -f .env ]; then
 fi
 
 echo "==> 拉取/构建镜像并启动"
-docker compose -f deploy/docker-compose.yml up -d --build
+docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
 
 echo "==> 等待健康检查"
 for i in $(seq 1 30); do

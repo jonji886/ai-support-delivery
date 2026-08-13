@@ -3,6 +3,9 @@ __pycache__/
 .pytest_cache/
 *.py[cod]
 
+# IDE 本地配置（含云集成本地凭据），不纳入版本控制
+.codebuddy/
+
 # runtime data
 runtime/*.db
 runtime/*.sqlite
