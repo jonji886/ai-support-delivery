@@ -30,7 +30,7 @@ def test_role_view_whitelist_is_declared() -> None:
     source = HTML.read_text(encoding="utf-8")
     assert "consumer:['guide','chat']" in source
     assert "agent:['chat','tickets']" in source
-    assert "supervisor:['tickets','metrics','rules']" in source
+    assert "supervisor:['metrics','tickets','rules']" in source
     assert "implementer:['guide','metrics','rules']" in source
 
 
@@ -153,6 +153,14 @@ def test_supervisor_dashboard_explains_metrics_and_supports_actionable_visuals()
     assert "退换货信息不完整" in source
     assert "risk-code" in source
     assert "position:relative;flex:1;height:155px" in source
+    assert 'id="metricsSummary"' in source
+    assert "function buildMetricsSummary(metrics)" in source
+    assert "当前需要重点关注" in source
+    assert "data-tip=" in source
+    assert 'tabindex="0"' in source
+    assert "最近风险事件" not in source
+    assert "fetch(API+'/admin/events'" not in source
+    assert "renderRiskDistribution(metrics.error_distribution)" in source
 
 
 def test_homepage_has_single_role_aware_primary_task_and_direct_role_actions() -> None:
@@ -166,6 +174,7 @@ def test_homepage_has_single_role_aware_primary_task_and_direct_role_actions() -
     assert "function switchRoleAndGo(role,view)" in source
     assert "switchRoleAndGo('agent','tickets')" in source
     assert "switchRoleAndGo('supervisor','metrics')" in source
+    assert "function defaultView(){return roleViews[$('role').value]?.[0]||'guide'}" in source
 
 
 def test_consumer_chat_uses_bound_demo_order_without_requiring_reentry() -> None:
