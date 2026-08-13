@@ -1,0 +1,6 @@
+{"case_id":"return-eligibility-success","scenario":"return_eligibility_success","expected_status":"completed","expected_tool":"check_return_eligibility"}
+{"case_id":"return-missing-reason","scenario":"return_missing_reason","expected_status":"needs_input","expected_error":"400_RETURN_FIELDS_REQUIRED"}
+{"case_id":"return-human-review","scenario":"return_human_review","expected_status":"handoff","expected_tool":"check_return_eligibility"}
+{"case_id":"return-unconfirmed-write","scenario":"unconfirmed_write","expected_status":"needs_input","expected_error":"409_SKILL_CONFIRMATION_REQUIRED"}
+{"case_id":"return-confirmed-write","scenario":"confirmed_write","expected_status":"completed","expected_tool":"submit_return_application"}
+{"case_id":"return-idempotent-write","scenario":"idempotent_write","expected_status":"completed","expected_tool":"submit_return_application"}

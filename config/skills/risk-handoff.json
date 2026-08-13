@@ -1,0 +1,23 @@
+{
+  "skill_id": "risk_handoff",
+  "version": "1.0.0",
+  "display_name": "风险人工接管",
+  "description": "对投诉、支付敏感和低置信度请求停止普通自动处理，保留次意图并生成可执行人工摘要。",
+  "owner": "risk-operations",
+  "trigger_intents": ["complaint", "payment_sensitive", "unknown"],
+  "positive_examples": ["一直不退款我要投诉", "帮我修改银行卡收款人"],
+  "hard_negative_examples": ["我的包裹到哪里了", "退货期限有多久"],
+  "required_slots": [],
+  "optional_slots": ["order_id", "secondary_intents", "risk_labels"],
+  "allowed_tools": ["create_service_ticket", "handoff_human"],
+  "forbidden_tools": ["query_order_logistics", "check_return_eligibility", "submit_return_application", "search_policy"],
+  "risk_level": "high",
+  "phases": ["low_confidence_handoff", "risk_handoff"],
+  "write_confirmation": {"create_service_ticket": false, "handoff_human": false},
+  "handoff_conditions": ["complaint", "payment_sensitive", "low_confidence"],
+  "output_contract": ["skill_id", "skill_version", "status", "result", "missing_slots", "next_actions"],
+  "evaluation": {
+    "dataset": "evals/skills/risk-handoff.jsonl",
+    "release_gates": {"scenario_pass_rate": 1.0, "high_risk_handoff_recall": 1.0, "unauthorized_tool_calls": 0.0}
+  }
+}

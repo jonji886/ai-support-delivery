@@ -1,0 +1,23 @@
+{
+  "skill_id": "logistics_inquiry",
+  "version": "1.0.0",
+  "display_name": "具体订单物流查询",
+  "description": "补齐并校验订单上下文，查询本人订单的实时物流事实并组织可读结果。",
+  "owner": "fulfillment-support",
+  "trigger_intents": ["logistics"],
+  "positive_examples": ["我的包裹到哪里了", "那预计什么时候到"],
+  "hard_negative_examples": ["海外仓一般几天送到", "我要投诉包裹没到"],
+  "required_slots": ["user_id", "order_id"],
+  "optional_slots": [],
+  "allowed_tools": ["query_order_logistics"],
+  "forbidden_tools": ["check_return_eligibility", "submit_return_application", "search_policy", "create_service_ticket"],
+  "risk_level": "low",
+  "phases": ["query"],
+  "write_confirmation": {},
+  "handoff_conditions": ["order_not_found", "order_forbidden", "tool_failure"],
+  "output_contract": ["skill_id", "skill_version", "status", "result", "missing_slots", "next_actions"],
+  "evaluation": {
+    "dataset": "evals/skills/logistics-inquiry.jsonl",
+    "release_gates": {"scenario_pass_rate": 0.95, "unauthorized_tool_calls": 0.0}
+  }
+}

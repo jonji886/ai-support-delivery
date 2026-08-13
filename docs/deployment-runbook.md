@@ -8,7 +8,7 @@ docker compose -f deploy/docker-compose.yml up --build
 
 API：`http://localhost:8000/health`；演示页：`http://localhost:8080`。
 
-运行时依赖包含 `langgraph==0.6.11`。建议在独立虚拟环境或容器中执行 `python3 -m pip install -r requirements.txt`，避免与机器上其他版本的 LangChain/LangSmith 混装。当前未启用 LangGraph checkpointer；会话状态仍由 `CONVERSATION_DB_PATH` 指定的 SQLite 数据库保存，意图资产由 `config/intent-catalog.json` 加载并在启动时校验。
+运行时依赖包含 `langgraph==0.6.11`。建议在独立虚拟环境或容器中执行 `python3 -m pip install -r requirements.txt`，避免与机器上其他版本的 LangChain/LangSmith 混装。当前未启用 LangGraph checkpointer；会话状态仍由 `CONVERSATION_DB_PATH` 指定的 SQLite 数据库保存，意图资产由 `config/intent-catalog.json` 加载，场景 Skill 由 `config/skills/*.json` 注册，两者均在启动时 fail fast 校验。
 
 ## 配置与日志
 
@@ -66,12 +66,16 @@ export RETURN_FACT_TTL_MINUTES=15
 
 所有值必须是正整数，否则服务启动失败。变更前先判断业务事实的变化速度：延长 TTL 会降低重复询问与 Tool 调用，但增加陈旧状态复用风险；缩短则相反。生产环境修改 Intent Catalog 或 TTL 后，至少执行 `python3 evals/run_intent_eval.py`、`python3 evals/run_memory_eval.py` 和完整固定回归；目录变更还应升级 `version` 并保留发布审批记录。
 
+修改 Skill Manifest 或 Handler 时必须升级语义版本并执行 `python3 evals/run_skill_eval.py`。触发意图、必需槽位、输出或 Tool 权限变化属于契约变更；生产化后应建立 Manifest 审批、兼容性检查、灰度流量和按 Skill 版本回滚。本 POC 尚未实现远程 Skill 市场或动态热加载，配置变更通过应用版本发布。
+
 ## 排障与回滚
 
 - API 健康检查失败：查看 `docker compose logs api`，确认数据文件已复制到镜像。
 - 规则无引用：检查 `knowledge/*.json` 的生效版本、区域和关键词。
 - 意图配置启动失败：检查 `config/intent-catalog.json` 是否包含六个必需意图、owner、正反例，以及各路由必需 Tool 的允许权限。
 - 多轮错误复用：检查槽位 `source/scope_order_id/expires_at`，确认用户切换订单时旧订单状态已失效，并运行短期状态专项评测。
+- Skill 选错：检查 `graph.classify_intent` 与 `skill.*` Span，确认 Intent Catalog 与 Registry 映射版本，再运行选择层评测。
+- Skill 内部失败：检查 `skill.status/missing_slots/called_tools/denied_tools`，再沿父子链查看具体 Tool；不要把受控 `needs_input` 或 `handoff` 当作系统异常。
 - 已知 `trace_id` 的失败：调用 `/admin/traces/{trace_id}`，先找错误 Span，再检查其父 LangGraph 节点和错误码。
 - P95 升高或错误率异常：调用 `/admin/observability/summary`，按 `operations` 排查模型、RAG 或 Tool，再回放最慢/失败 Trace。
 - 重复建单：检查请求是否复用了相同 `idempotency_key`；MVP 重启会清空内存工单。

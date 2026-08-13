@@ -1,0 +1,23 @@
+{
+  "skill_id": "return_resolution",
+  "version": "1.0.0",
+  "display_name": "退货资格与申请",
+  "description": "收集退货槽位、判断资格，并在用户明确确认后幂等提交退货申请。",
+  "owner": "returns-operations",
+  "trigger_intents": ["return"],
+  "positive_examples": ["这个订单能退吗", "确认提交退货申请"],
+  "hard_negative_examples": ["退货期限有多久", "一直不退款我要投诉"],
+  "required_slots": ["user_id", "order_id", "return_reason"],
+  "optional_slots": ["idempotency_key"],
+  "allowed_tools": ["check_return_eligibility", "submit_return_application", "create_service_ticket", "handoff_human"],
+  "forbidden_tools": ["query_order_logistics", "search_policy"],
+  "risk_level": "medium",
+  "phases": ["eligibility_check", "confirm_submit"],
+  "write_confirmation": {"submit_return_application": true, "create_service_ticket": false},
+  "handoff_conditions": ["quality_dispute", "policy_missing", "order_state_unsupported", "two_unresolved_turns", "tool_failure"],
+  "output_contract": ["skill_id", "skill_version", "status", "result", "missing_slots", "next_actions"],
+  "evaluation": {
+    "dataset": "evals/skills/return-resolution.jsonl",
+    "release_gates": {"scenario_pass_rate": 0.95, "unauthorized_tool_calls": 0.0, "unconfirmed_writes": 0.0, "duplicate_writes": 0.0}
+  }
+}

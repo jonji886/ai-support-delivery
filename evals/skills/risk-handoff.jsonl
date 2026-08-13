@@ -1,0 +1,2 @@
+{"case_id":"risk-complaint","scenario":"risk_complaint","expected_status":"handoff","expected_tool":"create_service_ticket"}
+{"case_id":"risk-payment","scenario":"risk_payment","expected_status":"handoff","expected_tool":"create_service_ticket"}

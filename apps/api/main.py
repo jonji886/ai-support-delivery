@@ -15,6 +15,10 @@ from apps.api.services.ticket import TicketService
 from apps.api.services.return_application import ReturnApplicationService
 from apps.api.services.deepseek import DeepSeekClient
 from apps.api.services.intent_catalog import IntentCatalog
+from apps.api.skills.contracts import SkillExecutionContext
+from apps.api.skills.executor import SkillExecutor
+from apps.api.skills.handlers import SkillHandlerDependencies, SupportSkillHandlers
+from apps.api.skills.registry import SkillRegistry
 from apps.api.support.responses import ToolResponse, new_trace_id
 from apps.api.support.events import EventStore
 from apps.api.support.conversations import ConversationStore
@@ -43,6 +47,8 @@ events = EventStore(os.getenv("EVENTS_DB_PATH", "runtime/events.db"))
 traces = TraceStore()
 conversations = ConversationStore()
 intent_catalog = IntentCatalog.from_default_data()
+skill_registry = SkillRegistry.from_default_manifests()
+skill_executor = SkillExecutor(skill_registry, traces)
 STAFF_IDENTITIES = {
     "agent": "agent-demo-001",
     "supervisor": "supervisor-demo-001",
@@ -97,6 +103,19 @@ def record_tool(tool_name: str, trace_id: str, result: ToolResponse) -> None:
     events.append(event_type="tool", tool_name=tool_name, trace_id=trace_id, success=result.success, error_code=result.error_code)
 
 
+skill_handlers = SupportSkillHandlers(
+    SkillHandlerDependencies(
+        logistics=service,
+        returns=return_service,
+        return_applications=return_application_service,
+        policies=policy_service,
+        tickets=ticket_service,
+        record_tool=record_tool,
+        record_conversation=record_conversation,
+    )
+)
+
+
 def staff_identity_allowed(role: Optional[str], user_id: Optional[str]) -> bool:
     return bool(role and user_id and user_id == STAFF_IDENTITIES.get(role))
 
@@ -113,6 +132,9 @@ support_graph = build_support_graph(
         record_conversation=record_conversation,
         observability=traces,
         intents=intent_catalog,
+        skills=skill_registry,
+        skill_executor=skill_executor,
+        skill_handlers=skill_handlers,
     )
 )
 
@@ -198,11 +220,26 @@ def get_ticket_for_user(ticket_id: str, x_user_id: Optional[str] = Header(defaul
 @app.post("/tools/submit-return-application")
 def submit_return_application(request: SubmitReturnApplicationRequest, x_user_id: Optional[str] = Header(default=None)) -> JSONResponse:
     trace_id = new_trace_id()
-    if not x_user_id:
+    outcome = skill_executor.execute(
+        "return_resolution",
+        SkillExecutionContext(
+            trace_id=trace_id,
+            intent="return",
+            phase="confirm_submit",
+            confirmed=True,
+            payload={
+                "order_id": request.order_id,
+                "user_id": x_user_id,
+                "return_reason": request.return_reason,
+                "idempotency_key": request.idempotency_key,
+            },
+        ),
+        skill_handlers.return_resolution,
+    )
+    result = outcome.result
+    if not x_user_id and result.error_code == "400_RETURN_FIELDS_REQUIRED":
         result = ToolResponse.failure(trace_id, "401_MISSING_USER", "缺少用户身份，无法提交退货申请。")
-    else:
-        result = return_application_service.submit(request.order_id, x_user_id, request.return_reason, request.idempotency_key, trace_id)
-    record_tool("submit_return_application", trace_id, result)
+    record_tool(outcome.tool_name, trace_id, result)
     return JSONResponse(status_code=result.http_status, content=result.model_dump())
 
 

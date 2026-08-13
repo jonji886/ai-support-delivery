@@ -1,6 +1,46 @@
 # 解决方案设计
 
-`/assist` 是 MVP 编排入口，由 LangGraph 显式状态图执行 `load_context → classify_intent → 条件业务节点 → finalize`。条件业务节点包括低置信度转人工、高风险转人工、物流查询、退换货判断和规则检索；节点通过依赖注入调用现有 Service，不直接访问或修改业务数据。意图分类先使用版本化 Intent Catalog 中的显式安全信号，目录未命中的长尾表达才交给可选 DeepSeek，模型输出仍必须属于目录；执行前再校验意图对应的 Tool 权限。订单 Tool 只读取匿名模拟数据并校验归属。规则 Tool 先将 `published + 生效时间窗口 + 区域` 作为硬准入条件，再执行 lexical/vector 候选生成与 RRF 融合，最后通过独立证据充分性门禁；只有直接支持问题的片段才能成为答案和引用。重排是可选策略而非固定装饰，本地消融未证明测试 reranker 的边际收益，因此默认 `fusion`；生产真实 reranker 必须在相同评测契约下证明收益后启用。
+`/assist` 是 MVP 编排入口，由 LangGraph 显式状态图执行 `load_context → classify_intent → 选择场景 Skill → finalize`。意图分类先使用版本化 Intent Catalog 中的显式安全信号，目录未命中的长尾表达才交给可选 DeepSeek，模型输出仍必须属于目录。图节点不再直接拥有业务 Tool，而是调用统一 Skill Executor；Executor 校验意图边界、Tool 权限和写操作确认，Handler 完成场景流程，Service/Tool 仍是业务事实与写操作的所有者。
+
+## Agent、Skill 与 Tool 的责任边界
+
+```mermaid
+flowchart LR
+    U[用户请求] --> A[Agent / LangGraph]
+    A -->|主意图选择| R[Skill Registry]
+    R --> E[Skill Executor]
+    E -->|加载 Manifest| S[场景 Skill Handler]
+    S -->|授权且已确认| T[受控 Tool / Service]
+    T --> S
+    S --> O[统一 Skill Result]
+    O --> A
+```
+
+| 层级 | 拥有的决策 | 不拥有的权力 |
+| --- | --- | --- |
+| Agent | 上下文加载、主意图与 Skill 选择、节点顺序 | 不直接决定业务事实或绕过 Skill 权限 |
+| Skill | 槽位、执行阶段、允许 Tool、确认、降级和标准输出 | 不绕过 Tool 自身认证、幂等与数据校验 |
+| Tool/Service | 原子查询或写操作、业务事实、资源权限 | 不负责理解完整用户场景 |
+
+每个 JSON Manifest 是场景能力的治理契约，代码 Handler 是实现；Registry 确保一个主意图只有一个 Skill，Executor 是统一策略执行点。将 Manifest 和 Handler 分开，是为了让产品/运营边界可以被审阅和版本化，同时避免让配置文件承载复杂业务代码。
+
+### 退货 Skill 的两阶段流程
+
+`return_resolution` 同时封装只读资格判断和确认后写入，两个 Tool 不被当成两个孤立 Skill：
+
+```mermaid
+stateDiagram-v2
+    [*] --> CollectSlots
+    CollectSlots --> NeedsInput: 缺 user/order/reason
+    CollectSlots --> EligibilityCheck: 槽位齐全
+    EligibilityCheck --> Handoff: 质量争议/规则或状态异常
+    EligibilityCheck --> AwaitConfirmation: 符合资格
+    AwaitConfirmation --> ConfirmSubmit: 用户明确确认
+    ConfirmSubmit --> PendingReview: 幂等提交成功
+    PendingReview --> [*]
+```
+
+Tool 的 `success` 表示原子调用按契约返回，不等于场景已自动闭环；例如资格查询成功但 `requires_human=true` 时，Skill 状态为 `handoff`。这一层状态区分用于正确计算自动解决率和人工压力。
 
 ## 意图资产与安全路由
 
@@ -95,7 +135,7 @@ flowchart LR
 
 ## 运行可观测性
 
-运行诊断与业务质量事件分开存储：`EventStore` 保留会话/Tool 的业务统计事件，`TraceStore` 只负责请求执行链路。HTTP 中间件为每个请求创建新的 `trace_id`，写入响应体（统一 Tool 响应）和 `X-Trace-Id` 响应头；`/assist` 内部将每个 LangGraph 节点记录为 `graph.*` Span，并将模型、RAG、Tool 记录为其子 Span。这样既能看到“经过了哪些节点”，也能定位“哪次外部/业务调用失败或变慢”。
+运行诊断与业务质量事件分开存储：`EventStore` 保留会话/Tool 的业务统计事件，`TraceStore` 只负责请求执行链路。HTTP 中间件为每个请求创建新的 `trace_id`，写入响应体和 `X-Trace-Id` 响应头；`/assist` 内部形成 `graph.* → skill.<skill_id> → tool.* / rag.*` 父子 Span。这样能区分选错 Skill、Skill 流程失败和底层 Tool 故障。
 
 ```mermaid
 flowchart LR
@@ -103,7 +143,8 @@ flowchart LR
     T --> G2[graph.classify_intent]
     G2 --> M[model.deepseek.classify 可选]
     T --> G3[graph.业务节点]
-    G3 --> X[tool.* 或 rag.search_policy]
+    G3 --> S[skill.id + version + phase + status]
+    S --> X[tool.* 或 rag.search_policy]
     T --> G4[graph.finalize]
 ```
 

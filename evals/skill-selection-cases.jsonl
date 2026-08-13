@@ -1,0 +1,16 @@
+{"case_id":"skill-select-logistics-01","input":"我的包裹到哪里了","expected_intent":"logistics","expected_skill":"logistics_inquiry"}
+{"case_id":"skill-select-logistics-02","input":"那预计什么时候到","previous_intent":"logistics","expected_intent":"logistics","expected_skill":"logistics_inquiry"}
+{"case_id":"skill-select-logistics-03","input":"订单配送进度","expected_intent":"logistics","expected_skill":"logistics_inquiry"}
+{"case_id":"skill-select-return-01","input":"这个订单能退吗","expected_intent":"return","expected_skill":"return_resolution"}
+{"case_id":"skill-select-return-02","input":"尺码不合适","previous_intent":"return","expected_intent":"return","expected_skill":"return_resolution"}
+{"case_id":"skill-select-return-03","input":"我想换货","expected_intent":"return","expected_skill":"return_resolution"}
+{"case_id":"skill-select-policy-01","input":"海外仓一般几天送到","expected_intent":"policy","expected_skill":"policy_qa"}
+{"case_id":"skill-select-policy-02","input":"退货期限有多久","expected_intent":"policy","expected_skill":"policy_qa"}
+{"case_id":"skill-select-policy-03","input":"shipping policy","expected_intent":"policy","expected_skill":"policy_qa"}
+{"case_id":"skill-select-risk-01","input":"一直不退款我要投诉","expected_intent":"complaint","expected_skill":"risk_handoff","high_risk":true}
+{"case_id":"skill-select-risk-02","input":"帮我修改银行卡收款人","expected_intent":"payment_sensitive","expected_skill":"risk_handoff","high_risk":true}
+{"case_id":"skill-select-risk-03","input":"我有一个复杂问题","expected_intent":"unknown","expected_skill":"risk_handoff"}
+{"case_id":"skill-select-multi-01","input":"包裹没到我要投诉","expected_intent":"complaint","expected_skill":"risk_handoff","expected_secondary":"logistics","high_risk":true}
+{"case_id":"skill-select-multi-02","input":"我想退货，退款改到另一张银行卡","expected_intent":"payment_sensitive","expected_skill":"risk_handoff","expected_secondary":"return","high_risk":true}
+{"case_id":"skill-select-hard-negative-01","input":"退货规则是什么","expected_intent":"policy","expected_skill":"policy_qa"}
+{"case_id":"skill-select-hard-negative-02","input":"我的订单物流时效到了吗","expected_intent":"policy","expected_skill":"policy_qa"}

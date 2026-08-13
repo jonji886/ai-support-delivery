@@ -2,7 +2,7 @@
 
 跨境电商售后 AI 客服交付 POC，面向 AI 产品、解决方案和交付岗位作品集展示。
 
-它演示一个真实售后场景中的完整闭环：消费者提问 → 识别意图 → 受控 Tool 核验 → 规则/业务判断 → 用户确认写操作 → 人工接管 → 质量评测与 badcase 修复。
+它演示一个真实售后场景中的完整闭环：消费者提问 → 识别意图 → 选择场景 Skill → 受控 Tool 核验 → 规则/业务判断 → 用户确认写操作 → 人工接管 → 质量评测与 badcase 修复。
 
 这是可复现、可评测的演示系统，不是生产退款系统。订单、物流、规则和工单均为匿名模拟数据，当前结果不能直接代表客户生产收益。
 
@@ -39,6 +39,7 @@
 | 用版本化 Intent Catalog 管意图，而不是只写 Prompt | 让业务边界、责任人、风险优先级、正反例和 Tool 权限成为可评测、可审计、可回滚的产品资产 |
 | 多意图保留“主意图 + 次意图” | 高风险诉求可以抢占自动执行，同时不丢失用户同轮提出的物流、退货等后续诉求 |
 | 短期记忆只保存结构化业务状态 | 保留连续追问体验，同时避免聊天摘要、过期事实或旧订单信息污染业务判断 |
+| 在 Agent 与 Tool 之间增加场景 Skill | 把完成一类任务所需的槽位、流程、权限、确认、降级和评测封装成可复用、可版本化的能力，而不是把 API 改名为 Skill |
 | 模型失败时回退到确定性路由 | AI 不可用时，低风险基础路径仍可演示；失败不能导致无依据回答 |
 | 没有可靠依据时拒答或转人工 | 在售后场景中，可信度优先于覆盖率 |
 | 规则生命周期作为硬门禁 | 过期规则不能依赖排序降权；它必须在候选生成前被排除 |
@@ -48,7 +49,68 @@
 
 因此，这不是让 Agent 自主修改订单或直接退款的系统，而是“模型理解用户，业务 Tool 证明事实，人工处理例外”的交付方案。
 
-`/assist` 已使用 LangGraph 显式状态图编排：先加载用户隔离的会话上下文，再分类意图并经过低置信度/高风险门禁，最后只进入物流、退货、规则检索或人工接管节点。LangGraph 负责状态和控制流，不替代业务 Service，也不获得绕过权限、用户确认或幂等校验的能力。
+`/assist` 已使用 LangGraph 显式状态图编排：先加载用户隔离的会话上下文，再分类意图并选择场景 Skill。Agent 负责“现在用哪个能力”，Skill 负责“如何完成这类任务”，Tool 负责原子业务操作；LangGraph 不获得绕过 Skill 权限、用户确认或 Tool 幂等校验的能力。
+
+## 场景化 Skill 如何封装企业 AI 能力
+
+### Tool 不等于 Skill
+
+可以把三层关系理解为：Agent 是调度员，Skill 是一套标准作业流程，Tool 是执行其中一个动作的业务接口。
+
+| 层级 | 负责什么 | 本项目示例 |
+| --- | --- | --- |
+| Agent / 编排器 | 理解当前诉求，决定选择哪个 Skill、先处理哪个风险 | LangGraph + Intent Catalog |
+| 场景 Skill | 完成一类用户任务，封装槽位、流程、权限、确认、降级和输出 | `return_resolution` |
+| Tool | 执行一个原子、可审计的业务动作 | `check_return_eligibility`、`submit_return_application` |
+
+如果只是把 `query_order_logistics` 改名为 `logistics_skill`，它仍然只是一个 Tool，因为它没有说明缺订单号怎么追问、能否继承上下文、失败何时转人工、允许调用哪些其他 Tool，也没有独立版本和评测门禁。
+
+### 当前封装的四个 Skill
+
+| Skill | 完成的场景任务 | 允许使用的主要 Tool | 关键边界 |
+| --- | --- | --- | --- |
+| `logistics_inquiry` | 补齐订单上下文并返回实时物流 | `query_order_logistics` | 不允许提交退货或创建投诉工单 |
+| `return_resolution` | 收集退货信息、判断资格、确认后提交申请 | `check_return_eligibility`、`submit_return_application` | 写操作必须明确确认并使用幂等键 |
+| `policy_qa` | 基于当前有效规则和充分证据回答 | `search_policy` | 无充分证据不输出确定结论 |
+| `risk_handoff` | 对投诉、支付敏感和低置信度问题安全转人工 | `create_service_ticket`、`handoff_human` | 不允许查询或修改普通业务事实 |
+
+每个 Skill Manifest 都包含 `skill_id/version/owner`、触发意图、正反例、必需槽位、执行阶段、允许/禁止 Tool、写操作确认、人工接管条件、统一输出和发布门禁。Registry 在启动时检查重复意图归属和配置完整性；Executor 在执行前强制检查意图边界、Tool 权限与用户确认，并把 `skill.id/version/phase/status` 写入 Trace。
+
+### 为什么优先把退货做成完整 Skill
+
+退货场景最能检验 Skill 是否只是“接口包装”：它需要多轮补充订单号和退货原因，先调用只读 Tool 判断资格，再向用户展示确认动作，确认后才能调用写 Tool；提交必须幂等，质量争议、规则缺失或连续未解决还要转人工。
+
+```text
+return_resolution
+→ 检查 user_id / order_id / return_reason
+→ 缺参数：needs_input
+→ check_return_eligibility（只读）
+→ 质量争议：handoff
+→ 符合资格：等待用户确认
+→ submit_return_application（写操作 + 幂等键）
+→ 返回“待审核”，不声称退款完成
+```
+
+因此，一个 Tool 调用成功也不等于 Skill 自动完成。例如质量争议的资格 Tool 成功返回了 `requires_human=true`，Skill 状态仍应是 `handoff`；否则运营看板会把需要人工的场景误算为自动解决。
+
+### 为什么评测必须分成“选择”和“执行”两层
+
+整体 Agent 用例失败时，可能是选错 Skill，也可能是 Skill 内部缺槽位、调用错 Tool 或降级错误。如果只看端到端通过率，修复方向不清楚。因此本项目分别评测：
+
+- Skill 选择：意图是否映射到正确 Skill，多意图时高风险 Skill 是否抢占。
+- Skill 执行：选中 Skill 后，槽位、Tool、确认、幂等、输出和人工降级是否正确。
+
+当前选择集 16/16、执行集 13/13；高风险 Skill 召回率 100%，越权 Tool 调用、未确认写操作和重复写入均为 0。安全指标使用“发生一次即阻断”，不被平均通过率掩盖。
+
+### 没有独立 Skill 层会造成什么问题
+
+- 场景规则散落在 Agent 节点或 Prompt 中，新增 Web、客服工作台等入口时需要复制流程。
+- Tool 权限、写操作确认和人工降级缺少统一执行点，容易出现不同入口行为不一致。
+- 场景能力不能独立版本化；修改退货流程时往往只能整体发布或回滚 Agent。
+- 端到端评测失败后，难以判断是选错能力，还是能力内部执行错误。
+- 业务方无法把某个场景作为独立资产进行复用、审计、灰度和验收。
+
+引入 Skill 层也有成本，需要维护 Manifest、Registry、版本兼容和专项评测。本项目接受这些成本，是因为它换来了场景能力的独立复用、权限收口、版本治理和可定位的质量指标。
 
 ## 当前能力边界
 
@@ -80,12 +142,12 @@
 - 订单事实来自受控 Tool，并校验 `X-User-Id` 与订单归属。
 - 写操作需要明确确认和幂等键；“待审核”不代表退款完成。
 - Tool 统一返回 `success`、`data`、`error_code`、`message`、`trace_id`。
-- 每个 HTTP 请求返回 `X-Trace-Id`；`/assist` 可回放到 LangGraph 节点及其模型、RAG、Tool 子调用，并按时间窗口分析失败率和 P50/P95。
+- 每个 HTTP 请求返回 `X-Trace-Id`；`/assist` 可回放到 LangGraph、Skill 及其模型、RAG、Tool 子调用，并按时间窗口分析失败率和 P50/P95。
 - 低置信度、无依据、订单异常和高风险争议进入人工处理，不以模型猜测替代事实。
 
 ## 当前评测结果
 
-以下数据来自当前版本实际执行的 `evals/run_eval.py` 和 `evals/latest-report.json`，不是生产承诺。
+以下数据来自当前版本实际执行的核心、意图、记忆、Skill 与 RAG 专项评测，不是生产承诺。
 
 | 指标 | 当前结果 | POC/验收目标 | 状态 |
 | --- | ---: | ---: | --- |
@@ -93,11 +155,14 @@
 | 规则引用有效率 | 100% | ≥ 90% | 达标 |
 | 高风险转人工覆盖率 | 100% | ≥ 95% | 达标 |
 | Tool 成功率 | 100% | ≥ 95% | 达标 |
-| 本地 TestClient P95 | 约 80.84ms | ≤ 10 秒 | 达标 |
+| 本地 TestClient P95 | 约 97.41ms | ≤ 10 秒 | 达标 |
 | 意图目录固定集 | 60/60，100% | ≥ 95% | 达标 |
 | 高风险意图召回率 | 100% | 100% | 达标 |
 | 短期状态场景通过率 | 12/12，100% | 100% | 达标 |
 | 跨用户/陈旧状态误用率 | 0% / 0% | 0% / 0% | 达标 |
+| Skill 选择准确率 | 16/16，100% | ≥ 95% | 达标 |
+| Skill 执行场景通过率 | 13/13，100% | ≥ 95% | 达标 |
+| 越权 Tool / 未确认写 / 重复写 | 0 / 0 / 0 | 0 / 0 / 0 | 达标 |
 
 两项 P0 专项门禁也已执行：Intent Catalog 固定集 60/60，主意图准确率 100%、高风险召回率 100%、多意图次意图召回率 100%；短期状态场景 12/12，跨用户泄漏率 0%、陈旧槽位误用率 0%、订单纠正准确率 100%。前者验证当前确定性安全路由和目录边界，不代表 DeepSeek 等真实模型在生产流量上的分类效果；后者验证结构化状态契约，不代表生产数据库的容量与并发能力。
 
@@ -300,7 +365,7 @@ curl -s 'http://127.0.0.1:8000/admin/observability/summary?window_minutes=60' \
   -H 'X-Role: supervisor'
 ```
 
-前者还原 HTTP → LangGraph → Model/RAG/Tool 父子链并标出具体失败操作；后者返回请求量、错误码、端到端及各操作 P50/P95、最慢链路和最近失败链路。本地数据默认保存在 `runtime/observability.db`，运行日志为单行 JSON；详细排障步骤见 [`docs/deployment-runbook.md`](docs/deployment-runbook.md)。
+前者还原 HTTP → LangGraph → Skill → Model/RAG/Tool 父子链并标出具体失败操作；后者返回请求量、错误码、端到端及各操作 P50/P95、最慢链路和最近失败链路。本地数据默认保存在 `runtime/observability.db`，运行日志为单行 JSON；详细排障步骤见 [`docs/deployment-runbook.md`](docs/deployment-runbook.md)。
 
 ## 测试与验收
 
@@ -309,6 +374,7 @@ python3 -m pytest -q
 python3 evals/validate_dataset.py
 python3 evals/run_intent_eval.py
 python3 evals/run_memory_eval.py
+python3 evals/run_skill_eval.py
 python3 evals/run_policy_eval.py
 python3 evals/run_eval.py
 ```
@@ -334,6 +400,8 @@ python3 evals/run_eval.py
 apps/api/                 # FastAPI、编排入口、受控 Tool 和服务
 apps/api/agent/graph.py  # LangGraph 状态、节点、条件路由和依赖注入
 apps/api/services/intent_catalog.py # 版本化意图资产、风险优先级和 Tool 权限
+apps/api/skills/          # Skill Contract、Registry、Executor 与场景 Handler
+config/skills/            # 四个版本化 Skill Manifest
 apps/api/support/conversations.py # 带来源、作用域和 TTL 的短期业务状态
 apps/api/support/observability.py  # 本地 Trace/Span、JSON 日志和窗口聚合
 apps/web/index.html       # 无构建静态工作台
@@ -346,6 +414,7 @@ evals/policy-report.json  # 最近一次 RAG 专项评测结果
 evals/rag/                # 开发、固定回归、挑战三套 RAG 数据集
 evals/run_intent_eval.py  # 意图混淆矩阵、高风险和多意图发布门禁
 evals/run_memory_eval.py  # 继承、过期、纠正和隔离状态门禁
+evals/run_skill_eval.py   # Skill 选择与执行两层发布门禁
 tests/                    # API、业务状态、权限和前端回归测试
 docs/api-contracts.md     # API 与 Tool 契约
 docs/solution-design.md   # 解决方案设计和数据流
@@ -355,7 +424,7 @@ SPEC.md                   # 需求、边界和验收标准
 
 ## 已知限制与生产化方向
 
-当前 POC 不包含真实认证、真实订单/物流连接、真实退款、实时质量运营和多租户隔离。LangGraph 当前负责单轮节点编排，跨请求会话、工单、退货申请和质量事件继续使用现有 SQLite 存储，避免两套持久化状态双写；服务重启后仍可查询。Intent Catalog 当前是代码仓库内的 JSON 配置，尚无运营后台、审批发布、在线灰度或真实模型流量评测。事件默认存储于 `runtime/events.db`，Trace/Span 默认存储于 `runtime/observability.db`。本地观测实现尚无跨服务传播、采样、自动保留、外部告警或生产级并发治理。规则检索是内存线性扫描 POC，虽有生产 Provider 接口，但尚无持久化向量索引、增量入库、真实模型基线和知识原子发布，不能将本地 100% 回归结果表述为生产 RAG 效果。
+当前 POC 不包含真实认证、真实订单/物流连接、真实退款、实时质量运营和多租户隔离。LangGraph 当前负责单轮节点编排，跨请求会话、工单、退货申请和质量事件继续使用现有 SQLite 存储，避免两套持久化状态双写；服务重启后仍可查询。Intent Catalog 和 Skill Manifest 当前是仓库内 JSON，尚无运营后台、审批发布、在线灰度、依赖版本解析或跨服务 Skill 分发。事件默认存储于 `runtime/events.db`，Trace/Span 默认存储于 `runtime/observability.db`。本地观测实现尚无跨服务传播、采样、自动保留、外部告警或生产级并发治理。规则检索是内存线性扫描 POC，虽有生产 Provider 接口，但尚无持久化向量索引、增量入库、真实模型基线和知识原子发布，不能将本地 100% 回归结果表述为生产 RAG 效果。
 
 生产化前至少需要：
 
@@ -365,6 +434,7 @@ SPEC.md                   # 需求、边界和验收标准
 4. 增加客服分配、实时指标、灰度发布、回滚和写操作紧急禁用能力。
 5. 为混合 RAG 接入生产 embedding、向量索引和 Cross-Encoder/model reranker，建立索引版本、知识版本发布和回滚流程。
 6. 将静态 POC 前端升级为可维护的前端工程，并补充浏览器级 E2E 测试。
+7. 为 Skill Manifest 增加审批、兼容性校验、依赖解析、灰度路由和按版本回滚能力。
 
 ## 相关文档
 
@@ -375,3 +445,4 @@ SPEC.md                   # 需求、边界和验收标准
 - [`docs/deployment-runbook.md`](docs/deployment-runbook.md)：启动、配置、排障和回滚。
 - [`docs/poc-acceptance-report.md`](docs/poc-acceptance-report.md)：当前固定评测和验收结论。
 - [`docs/evaluation-and-badcase.md`](docs/evaluation-and-badcase.md)：评测集设计、通过标准和 badcase 管理方法。
+- [`docs/adr/0005-scenario-skills-between-agent-and-tools.md`](docs/adr/0005-scenario-skills-between-agent-and-tools.md)：为什么需要独立场景 Skill 层及其取舍。

@@ -2,11 +2,21 @@
 
 ## `POST /assist`
 
-统一对话入口由 LangGraph 状态图编排。输入仍使用 `AssistRequest`，响应仍使用统一 Tool 响应结构；编排迁移不改变 HTTP 契约。图节点只能调用 Intent Catalog 允许的白名单业务 Service，订单归属、写操作确认、幂等和人工转接约束仍由 API/Tool 契约强制执行。`session_id` 的跨请求上下文由 SQLite `ConversationStore` 持久化并按用户隔离。
+统一对话入口由 LangGraph 状态图编排。输入仍使用 `AssistRequest`，响应仍使用统一 Tool 响应结构；增加 Skill 层不改变 HTTP 契约。主意图先映射到 Registry 中的场景 Skill，Skill Executor 再检查触发边界、Tool 权限和写操作确认；订单归属、幂等与业务数据校验继续由 Tool/Service 强制执行。`session_id` 的跨请求上下文由 SQLite `ConversationStore` 持久化并按用户隔离。
 
 `message` 中的表达和结构化请求字段不具有相同权威性：本轮 `order_id`/`return_reason` 高于会话继承状态；显式切换 `order_id` 会使旧订单作用域下的退货原因和已验证事实失效，并重置上一意图与连续未解决计数。过期槽位不会进入路由或 Tool 参数。跨用户复用同一 `session_id` 返回 `403_SESSION_FORBIDDEN`。
 
 意图目录的主意图决定当前路由，次意图用于人工摘要。`complaint` 和 `payment_sensitive` 抢占普通意图；最终节点再次校验主意图是否允许当前 Tool，配置冲突返回 `500_INTENT_TOOL_POLICY_VIOLATION` 且停止自动处理。当前公开响应体不暴露内部槽位或分类分数，目录版本、次意图和风险标签记录在 Trace/人工摘要中，避免把内部策略变成客户端稳定契约。
+
+Skill 运行错误契约：
+
+| 错误码 | 条件 | 是否执行 Tool 回调 |
+| --- | --- | --- |
+| `500_SKILL_INTENT_POLICY_VIOLATION` | 当前意图不属于目标 Skill 的触发边界 | 否 |
+| `500_SKILL_TOOL_POLICY_VIOLATION` | Skill 请求未授权或明确禁止的 Tool | 否 |
+| `409_SKILL_CONFIRMATION_REQUIRED` | 需要确认的写 Tool 未收到明确确认 | 否 |
+
+公开响应暂不增加 Skill 字段，避免将内部编排结构固化为客户端契约；主管可通过 Trace 查看 `skill.id/version/phase/status`、调用/拒绝的 Tool 和缺失槽位。
 
 ## `POST /tools/query-order-logistics`
 
@@ -81,7 +91,7 @@
 - `GET /admin/traces/{trace_id}`：需要主管或实施管理员角色，返回 HTTP Trace 与按开始时间排列的 LangGraph、模型、RAG、Tool Span；Span 包含父子关系、耗时、状态、错误码和非敏感技术属性。未知链路返回 `404_TRACE_NOT_FOUND`。
 - `GET /admin/observability/summary?window_minutes=60`：需要主管或实施管理员角色；窗口范围 1～10080 分钟，返回请求量/失败率、端到端 P50/P95/最大耗时、错误码分布、各操作调用量/失败率/P50/P95、最慢链路、最近失败请求和最近失败 Span。管理查询与健康检查不计入请求汇总。
 - `POST /tools/handoff-human`：输入会话摘要、转人工原因和幂等键，输出工单/接管信息；该 Tool 的响应 `handoff` 固定为 `true`。
-- `POST /tools/submit-return-application`：用户明确确认后提交模拟退货申请；返回申请单号、`待审核` 状态和后续步骤，不代表退款已完成；必须校验订单归属并支持幂等键。
+- `POST /tools/submit-return-application`：这是前端确认动作对应的现有 HTTP 契约，内部以 `confirmed=true` 执行 `return_resolution` 的 `confirm_submit` 阶段；返回申请单号、`待审核` 状态和后续步骤，不代表退款已完成，并继续校验订单归属与幂等键。
 - `GET /agent/return-applications`：需要员工身份和 `X-Role: agent`、`supervisor` 或 `implementer`；支持 `page`、`page_size`、`keyword`、`status` 分页筛选，返回退货申请列表和 `pagination`。
 - `GET /agent/tickets`：需要员工身份和客服、主管或实施管理员角色；支持 `page`、`page_size`、`keyword`、`status`、`category` 分页筛选，返回人工接管工单列表和 `pagination`。
 - `POST /agent/tickets/{ticket_id}/resolve`：需要人工客服或主管；输入处理状态（已解决/待补充信息/已升级主管）和客服回复，保存处理结果；已处理工单不可重复更新。

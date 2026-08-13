@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, Optional, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from apps.api.schemas import AssistRequest
+from apps.api.skills.contracts import SkillExecutionContext, SkillResult
 from apps.api.support.config import INTENT_MIN_CONFIDENCE, INTENT_MIN_MARGIN
 from apps.api.support.responses import ToolResponse
 
@@ -31,6 +32,9 @@ class SupportState(TypedDict, total=False):
     secondary_intents: list[str]
     risk_labels: list[str]
     catalog_version: str
+    skill_id: str
+    skill_version: str
+    skill_status: str
     result: ToolResponse
     tool_name: str
     conversation_intent: str
@@ -50,6 +54,9 @@ class SupportGraphDependencies:
     record_conversation: Callable[[str, str, ToolResponse, Optional[str]], None]
     observability: Any
     intents: Any
+    skills: Any
+    skill_executor: Any
+    skill_handlers: Any
 
 
 REQUIRED_GRAPH_NODES = {
@@ -140,6 +147,7 @@ def build_support_graph(deps: SupportGraphDependencies) -> Any:
             "secondary_intents": decision.get("secondary_intents", []),
             "risk_labels": decision.get("risk_labels", []),
             "catalog_version": decision.get("catalog_version", deps.intents.version),
+            "skill_id": deps.skills.for_intent(decision["intent"]).skill_id,
         }
 
     def route_intent(state: SupportState) -> str:
@@ -154,120 +162,41 @@ def build_support_graph(deps: SupportGraphDependencies) -> Any:
         }.get(state["intent"], "search_policy")
 
     def low_confidence_handoff(state: SupportState) -> SupportState:
-        request = state["request"]
-        trace_id = state["trace_id"]
-        order_id = state.get("effective_order_id")
-        with deps.observability.span("tool.create_service_ticket", kind="client", attributes={"tool.name": "create_service_ticket", "tool.operation": "write"}) as tool_span:
-            ticket = deps.tickets.create(f"用户诉求：{request.message}", "low_confidence", "high", order_id, f"assist-{trace_id}", trace_id, state.get("user_id"))
-            tool_span.set_result(ticket.success, ticket.error_code)
-        ticket.data["handoff_reason"] = "意图置信度不足，无法安全确认"
-        ticket.data["summary"] = {
-            "user_request": request.message,
-            "order_id": order_id,
-            "actions_taken": [],
-            "handoff_reason": "意图置信度不足，无法安全确认",
-            "secondary_intents": state.get("secondary_intents", []),
-            "risk_labels": state.get("risk_labels", []),
-            "intent_catalog_version": state.get("catalog_version"),
-        }
-        ticket.message = "目前无法可靠确认您的问题类型，已转人工处理。"
-        ticket.handoff = True
-        return _outcome(ticket, "handoff_human", "unknown", request, state, intent="unknown", resolved=False)
+        return _run_skill(state, "risk_handoff", "low_confidence_handoff", deps.skill_handlers.risk_handoff)
 
     def risk_handoff(state: SupportState) -> SupportState:
-        request = state["request"]
-        trace_id = state["trace_id"]
-        intent = state["intent"]
-        order_id = state.get("effective_order_id")
-        category = "payment_sensitive" if intent == "payment_sensitive" else "complaint_or_dispute"
-        reason = "支付敏感问题涉及支付账户或收款信息，必须由人工核验" if intent == "payment_sensitive" else "高风险投诉或退款争议默认转人工"
-        with deps.observability.span("tool.create_service_ticket", kind="client", attributes={"tool.name": "create_service_ticket", "tool.operation": "write"}) as tool_span:
-            ticket = deps.tickets.create(f"用户诉求：{request.message}", category, "urgent", order_id, f"assist-{trace_id}", trace_id, state.get("user_id"))
-            tool_span.set_result(ticket.success, ticket.error_code)
-        ticket.data["handoff_reason"] = reason
-        ticket.data["summary"] = {
-            "user_request": request.message,
-            "order_id": order_id,
-            "actions_taken": ["识别支付敏感意图" if intent == "payment_sensitive" else "识别高风险意图", "创建售后工单"],
-            "handoff_reason": reason,
-            "secondary_intents": state.get("secondary_intents", []),
-            "risk_labels": state.get("risk_labels", []),
-            "intent_catalog_version": state.get("catalog_version"),
-        }
-        ticket.message = "该问题涉及支付敏感信息，已停止自动处理并创建人工工单。" if intent == "payment_sensitive" else "该问题需要人工处理，已创建售后工单。"
-        ticket.handoff = True
-        return _outcome(ticket, "create_service_ticket", intent, request, state, intent=intent, resolved=False)
+        return _run_skill(state, "risk_handoff", "risk_handoff", deps.skill_handlers.risk_handoff)
 
     def query_logistics(state: SupportState) -> SupportState:
-        request = state["request"]
-        trace_id = state["trace_id"]
-        order_id = state.get("effective_order_id")
-        user_id = state.get("user_id")
-        with deps.observability.span("tool.query_order_logistics", kind="client", attributes={"tool.name": "query_order_logistics", "tool.operation": "read"}) as tool_span:
-            result = ToolResponse.failure(trace_id, "400_ORDER_REQUIRED", "请提供订单号并完成身份校验。") if not user_id or not order_id else deps.logistics.query(order_id, user_id, trace_id)
-            tool_span.set_result(result.success, result.error_code)
-        if result.success:
-            logistics = result.data or {}
-            latest = logistics.get("latest_event") or {}
-            eta = logistics.get("estimated_arrival")
-            result.message = f"订单 {logistics.get('order_id', request.order_id)} 当前状态为“{logistics.get('order_status', '未知')}”。最新节点：{latest.get('description', '暂无')}（{latest.get('location', '未知地点')}）。" + (f"预计 {eta} 到达。" if eta else "暂未提供预计到达时间。")
-        return _outcome(result, "query_order_logistics", "logistics", request, state, intent="logistics", resolved=result.success)
+        return _run_skill(state, "logistics_inquiry", "query", deps.skill_handlers.logistics_inquiry)
 
     def check_return_eligibility(state: SupportState) -> SupportState:
-        request = state["request"]
-        trace_id = state["trace_id"]
-        session = state.get("session") or {}
-        reason = request.return_reason or _extract_return_reason(request.message) or session.get("return_reason")
-        if not reason and state.get("previous_intent") == "return" and any(word in request.message for word in ("尺码", "质量", "损坏", "不合适", "不喜欢")):
-            reason = request.message.strip()
-        order_id = state.get("effective_order_id")
-        user_id = state.get("user_id")
-        with deps.observability.span("tool.check_return_eligibility", kind="client", attributes={"tool.name": "check_return_eligibility", "tool.operation": "read"}) as tool_span:
-            result = ToolResponse.failure(trace_id, "400_RETURN_FIELDS_REQUIRED", "要判断退换货资格，请补充订单号和退货原因。示例：OD202608001，原因：尺码不合适。") if not user_id or not order_id or not reason else deps.returns.check(order_id, user_id, reason, trace_id)
-            tool_span.set_result(result.success, result.error_code)
-        outcome = _outcome(result, "check_return_eligibility", "return", request, state, intent="return", resolved=result.success and not result.handoff, return_reason=reason)
-        if not result.success and state.get("previous_unresolved", 0) >= 1:
-            # Preserve the failed attempt in the audit trail before replacing
-            # the user-facing result with a controlled human handoff.
-            deps.record_tool("check_return_eligibility", trace_id, result)
-            deps.record_conversation(trace_id, "return", result, request.session_id)
-            with deps.observability.span("tool.create_service_ticket", kind="client", attributes={"tool.name": "create_service_ticket", "tool.operation": "write"}) as ticket_span:
-                ticket = deps.tickets.create(f"用户连续两次未解决：{request.message}", "low_confidence", "high", order_id, f"assist-{trace_id}", trace_id, user_id)
-                ticket_span.set_result(ticket.success, ticket.error_code)
-            ticket.data["handoff_reason"] = "同一会话连续两次未解决，转人工处理"
-            ticket.message = "连续两次未能完成退货资格判断，已转人工处理。"
-            ticket.handoff = True
-            outcome.update(_outcome(ticket, "handoff_human", "return", request, state, intent="return", resolved=False, unresolved_count=2))
-            outcome["record_conversation"] = False
-        return outcome
+        return _run_skill(state, "return_resolution", "eligibility_check", deps.skill_handlers.return_resolution)
 
     def search_policy(state: SupportState) -> SupportState:
-        with deps.observability.span("rag.search_policy", kind="client", attributes={"rag.region": "US", "rag.strategy": deps.policies.default_strategy}) as rag_span:
-            result = deps.policies.search(state["request"].message, "US", state["trace_id"])
-            data = result.data if isinstance(result.data, dict) else {}
-            retrieval = data.get("retrieval", {})
-            rag_span.set_result(
-                result.success,
-                result.error_code,
-                candidate_count=retrieval.get("candidate_count", 0),
-                citation_count=len(data.get("citations", [])),
-                rerank_score=retrieval.get("rerank_score"),
-                embedding_provider=retrieval.get("embedding_provider"),
-                reranker_provider=retrieval.get("reranker_provider"),
-            )
-        if not result.success:
-            result.message = "目前没有可验证的规则依据，建议转人工。"
-            result = result.model_copy(update={"http_status": 200})
-        elif isinstance(result.data, dict) and result.data.get("answer"):
-            result.message = result.data["answer"]
-        else:
-            result.message = "已根据生效规则并附引用回答。"
-        return {
-            "result": result,
-            "tool_name": "search_policy",
-            "conversation_intent": "policy",
-            "record_conversation": True,
+        return _run_skill(state, "policy_qa", "retrieve_and_answer", deps.skill_handlers.policy_qa)
+
+    def _run_skill(state: SupportState, skill_id: str, phase: str, handler: Any) -> SupportState:
+        payload = {
+            "request": state["request"],
+            "user_id": state.get("user_id"),
+            "session": state.get("session"),
+            "effective_order_id": state.get("effective_order_id"),
+            "previous_intent": state.get("previous_intent"),
+            "previous_unresolved": state.get("previous_unresolved", 0),
+            "secondary_intents": state.get("secondary_intents", []),
+            "risk_labels": state.get("risk_labels", []),
+            "catalog_version": state.get("catalog_version"),
         }
+        skill_result = deps.skill_executor.execute(
+            skill_id,
+            SkillExecutionContext(
+                trace_id=state["trace_id"], intent=state.get("intent", "unknown"),
+                phase=phase, payload=payload,
+            ),
+            handler,
+        )
+        return _skill_outcome(skill_result, state["request"], state)
 
     def finalize(state: SupportState) -> SupportState:
         result = state["result"]
@@ -281,7 +210,7 @@ def build_support_graph(deps: SupportGraphDependencies) -> Any:
         deps.record_tool(state["tool_name"], state["trace_id"], result)
         if state.get("record_conversation", True):
             deps.record_conversation(state["trace_id"], state.get("conversation_intent", state.get("intent", "unknown")), result, state["request"].session_id)
-        if state.get("session_update"):
+        if state.get("session_update") and state["session_update"].get("intent"):
             deps.conversations.save(state["request"].session_id, **state["session_update"])
         return {}
 
@@ -295,6 +224,9 @@ def build_support_graph(deps: SupportGraphDependencies) -> Any:
                     catalog_version=update.get("catalog_version"),
                     secondary_intents=update.get("secondary_intents"),
                     risk_labels=update.get("risk_labels"),
+                    skill_id=update.get("skill_id") or state.get("skill_id"),
+                    skill_version=update.get("skill_version"),
+                    skill_status=update.get("skill_status"),
                     tool_name=update.get("tool_name"),
                 )
                 return update
@@ -316,6 +248,20 @@ def build_support_graph(deps: SupportGraphDependencies) -> Any:
         workflow.add_edge(node, "finalize")
     workflow.add_edge("finalize", END)
     return workflow.compile()
+
+
+def _skill_outcome(outcome: SkillResult, request: AssistRequest, state: SupportState) -> SupportState:
+    update = _outcome(
+        outcome.result, outcome.tool_name, outcome.intent, request, state,
+        **outcome.session_values,
+    )
+    update.update({
+        "skill_id": outcome.skill_id,
+        "skill_version": outcome.skill_version,
+        "skill_status": outcome.status,
+        "record_conversation": outcome.record_conversation,
+    })
+    return update
 
 
 def _outcome(result: ToolResponse, tool_name: str, conversation_intent: str, request: AssistRequest, state: SupportState, **session_values: Any) -> SupportState:

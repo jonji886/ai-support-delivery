@@ -15,6 +15,7 @@
 - 4 类核心业务场景可端到端演示：物流查询、退换货资格判断、规则问答、投诉/异常转人工；支付敏感问题作为独立高风险子意图处理。
 - 支持中文多轮会话：在同一 `session_id` 下继承仍有效的结构化业务状态，支持补充缺失参数、省略式追问和用户纠正；不得把聊天全文或模型摘要直接当作事实。
 - 使用版本化 Intent Catalog 管理意图边界、责任人、正反例、风险、必需槽位和 Tool 权限，并以混淆矩阵和高风险召回门禁控制发布。
+- 使用版本化场景 Skill 封装完成一类任务所需的槽位、流程、Tool 权限、确认、降级和评测；Agent 选择 Skill，Skill 编排场景，Tool 执行原子操作。
 - 对订单与工单操作仅通过受控 Tool 执行；模型不得编造订单或物流状态。
 - 回答必须给出知识来源；资料不足、敏感争议或低置信度时转人工。
 - 提供固定评测集、测试报告、badcase 记录和 Docker 化部署手册。
@@ -38,6 +39,7 @@
 6. 创建售后工单 Tool，及人工接管上下文摘要。
 7. 会话、工单和退货申请使用 SQLite 持久化；会话只保存带来源、置信度、作用域和 TTL 的结构化槽位/已验证事实。生产化需进一步接入租户隔离、迁移、备份、过期清理和可靠事件流。
 8. 版本化 Intent Catalog、意图混淆评测、短期状态专项评测、回归评测、badcase 管理与 Docker Compose 部署。
+9. 四个场景 Skill、统一 Skill Registry/Executor、Skill 选择与执行两层评测。
 
 ### 2.2 非范围
 
@@ -107,17 +109,16 @@ flowchart TB
   A --> L[结构化日志与评测]
 ```
 
-### 4.2 Agent / Skill 设计
+### 4.2 Agent / Skill / Tool 设计
 
-| Skill | 输入 | 输出 | 安全约束 |
+| 场景 Skill | 场景目标 | 内部 Tool | 安全约束 |
 | --- | --- | --- | --- |
-| `query_order_logistics` | 订单号、已脱敏用户标识 | 订单与物流状态 | 仅 Tool 返回的数据可进入答案 |
-| `check_return_eligibility` | 订单号、退货原因 | 是否符合规则、依据、下一步 | 不承诺实际退款；争议转人工 |
-| `submit_return_application` | 订单号、退货原因、用户确认、幂等键 | 申请单号、待审核状态、后续步骤 | 仅用户明确确认后执行；不代表退款完成；校验订单归属 |
-| `search_policy` | 用户问题 | 带引用的规则片段 | 无引用不得断言规则 |
-| `create_service_ticket` | 会话摘要、分类、优先级 | 工单号、接管信息 | 仅模拟数据；记录调用审计 |
-| `handoff_human` | 历史会话、原因 | 客服摘要与转接标记 | 不再继续自动处理高风险事项 |
-| `payment_sensitive_route` | 用户消息、会话上下文 | 支付敏感分类、人工工单 | 不调用订单/退款写操作；必须记录转人工原因 |
+| `logistics_inquiry` | 补齐上下文并查询具体订单物流 | `query_order_logistics` | 不得调用退货或工单 Tool |
+| `return_resolution` | 收集退货信息、判断资格、确认后提交 | `check_return_eligibility`、`submit_return_application` | 写操作必须确认和幂等；争议转人工 |
+| `policy_qa` | 基于当前有效证据回答规则 | `search_policy` | 无充分证据不得断言 |
+| `risk_handoff` | 投诉、支付敏感、低置信度安全接管 | `create_service_ticket`、`handoff_human` | 不得继续普通业务自动处理 |
+
+Tool 保留原子契约，不视为 Skill。每个 Skill 必须有 `skill_id/version/owner`、触发意图、正反例、必需槽位、执行阶段、允许/禁止 Tool、确认规则、人工接管条件、输出契约与评测门禁。
 
 ### 4.3 关键数据对象
 
@@ -162,6 +163,15 @@ MVP 采用最小 RBAC，并使用模拟身份数据；真实生产环境应由�
 - 系统允许同一轮保留一个主意图和多个次意图；投诉、支付敏感等高风险意图优先成为主意图并停止普通自动执行，次意图进入人工摘要。
 - 模型只能输出目录中存在的意图；最终执行前必须再次校验该意图是否允许目标 Tool，冲突时停止执行并返回受控错误。
 - 目录加载时必须 fail fast：缺少必需意图、业务边界、责任人或路由 Tool 权限时不得启动为有效配置。
+
+### FR-01B 场景 Skill 治理
+
+- Agent 只能根据主意图选择 Registry 中已注册的 Skill，不得把 Tool 名直接当作场景能力。
+- 同一意图只能由一个 Skill 声明为主触发边界；重复归属、缺少必需意图映射或 Manifest 不完整时启动失败。
+- Skill Executor 必须在 Tool 调用前检查白名单/黑名单；越权调用返回 `500_SKILL_TOOL_POLICY_VIOLATION`，且回调不得执行。
+- Manifest 标记需要确认的写 Tool，在未获得明确确认时返回 `409_SKILL_CONFIRMATION_REQUIRED`，且回调不得执行。
+- `return_resolution` 必须支持 `eligibility_check` 和 `confirm_submit` 两阶段；质量争议即使 Tool 查询成功，Skill 状态也必须是 `handoff`，不得记为自动完成。
+- Trace 必须形成 `graph.* → skill.<skill_id> → tool.* / rag.*` 父子链，并记录 Skill ID、版本、阶段、状态、调用 Tool 和缺失槽位，不记录用户原文或敏感业务数据。
 
 ### FR-02 知识问答
 
@@ -224,6 +234,8 @@ MVP 采用最小 RBAC，并使用模拟身份数据；真实生产环境应由�
 - 对 lexical、vector、fusion、fusion+rerank 运行同集消融，至少比较 Recall@5、Top1、接受答案准确率、无依据拒答率、过期版本泄漏率和 P95。
 - 意图专项集必须覆盖全部目录意图、hard negative、上下文追问、多意图与高风险组合，输出混淆矩阵、逐意图 Precision/Recall/F1、高风险召回和次意图召回；高风险召回低于 100% 阻断发布。
 - 短期状态专项集必须覆盖继承、过期、用户纠正、订单切换、跨用户隔离与 Tool 事实来源；出现跨用户泄漏或陈旧槽位复用即阻断发布。
+- Skill 评测必须分为选择层和执行层：选择层验证意图到 Skill、多意图风险抢占；执行层验证槽位、Tool 权限、确认、幂等、降级和 Skill 状态。
+- Skill 发布门禁：选择准确率与执行场景通过率均不低于 95%，高风险 Skill 召回率 100%，越权 Tool、未确认写操作和重复写入均为 0。
 
 #### 测试集分层
 
@@ -266,7 +278,7 @@ MVP 不要求接入外部告警平台，但必须提供可查询的结构化指�
 
 ### 6.2 发布与回滚
 
-以下对象必须独立版本化：知识文档集合、Intent Catalog、Prompt、Agent/工作流配置、Tool 配置、评测集和应用镜像。
+以下对象必须独立版本化：知识文档集合、Intent Catalog、Skill Manifest、Prompt、Agent/工作流配置、Tool 配置、评测集和应用镜像。
 
 - 发布前：在固定评测集上执行回归；核心指标不得低于当前已验收基线，且高风险转人工覆盖率不得下降。
 - 灰度：MVP 以“演示环境的指定会话/测试集”为灰度范围，记录版本、时间、操作者和结果。
@@ -290,6 +302,10 @@ MVP 不要求接入外部告警平台，但必须提供可查询的结构化指�
 | 高风险意图召回率 | 支付敏感/投诉样本被识别为高风险的比例 | 100% |
 | 短期状态场景通过率 | 继承、过期、纠正、隔离场景全部通过的比例 | 100% |
 | 跨用户/陈旧状态误用率 | 使用其他用户或已过期状态的比例 | 0% |
+| Skill 选择准确率 | 主意图映射到正确场景 Skill 的比例 | ≥ 95% |
+| Skill 执行场景通过率 | Skill 内部状态、Tool、输出和降级符合契约的比例 | ≥ 95% |
+| 高风险 Skill 召回率 | 高风险请求选择 `risk_handoff` 的比例 | 100% |
+| 越权/未确认/重复写 | 被实际执行的违规操作次数 | 0 |
 
 ### 7.2 演示脚本
 
@@ -305,7 +321,7 @@ MVP 不要求接入外部告警平台，但必须提供可查询的结构化指�
 
 - 前端：Next.js / React，提供对话页、人工接管页、质量看板。
 - 后端：Python + FastAPI，提供 Agent、Tool、评测与管理 API。
-- 编排：`/assist` 使用 LangGraph 显式状态图，节点覆盖会话加载、意图分类、低置信度/高风险门禁、物流/退货/规则 Tool 路由和结果持久化；模型通过 OpenAI-compatible API 接入。LangGraph 仅编排，不得绕过 Tool 的校验、权限、确认和幂等约束。
+- 编排：`/assist` 使用 LangGraph 显式状态图选择场景 Skill；Skill Executor 管理 Tool 权限、确认和 Trace，Handler 完成场景流程。LangGraph 与模型均不得绕过 Skill/Tool 的校验、权限、确认和幂等约束。
 - 数据：MVP 使用 SQLite 或 DuckDB；知识向量存储可使用本地轻量实现。
 - 交付：Docker Compose；可选 Kubernetes manifests 作为扩展，不作为 MVP 阻塞项。
 

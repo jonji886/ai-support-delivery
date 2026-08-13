@@ -26,8 +26,10 @@ def test_assist_trace_can_be_replayed_as_parent_child_chain() -> None:
     assert "graph.load_context" in spans
     assert "graph.classify_intent" in spans
     assert "graph.query_logistics" in spans
+    assert "skill.logistics_inquiry" in spans
     assert "tool.query_order_logistics" in spans
-    assert spans["tool.query_order_logistics"]["parent_span_id"] == spans["graph.query_logistics"]["span_id"]
+    assert spans["skill.logistics_inquiry"]["parent_span_id"] == spans["graph.query_logistics"]["span_id"]
+    assert spans["tool.query_order_logistics"]["parent_span_id"] == spans["skill.logistics_inquiry"]["span_id"]
     assert all(span["duration_ms"] >= 0 for span in body["spans"])
 
 

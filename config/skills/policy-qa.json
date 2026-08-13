@@ -1,0 +1,23 @@
+{
+  "skill_id": "policy_qa",
+  "version": "1.0.0",
+  "display_name": "当前规则问答",
+  "description": "检索当前有效规则，在证据充分时回答并提供片段级引用。",
+  "owner": "knowledge-operations",
+  "trigger_intents": ["policy"],
+  "positive_examples": ["海外仓一般几天送到", "退货期限有多久"],
+  "hard_negative_examples": ["我的包裹到哪里了", "这个订单能退吗"],
+  "required_slots": [],
+  "optional_slots": ["region"],
+  "allowed_tools": ["search_policy"],
+  "forbidden_tools": ["query_order_logistics", "check_return_eligibility", "submit_return_application", "create_service_ticket"],
+  "risk_level": "low",
+  "phases": ["retrieve_and_answer"],
+  "write_confirmation": {},
+  "handoff_conditions": ["no_current_evidence", "evidence_below_threshold", "retrieval_failure"],
+  "output_contract": ["skill_id", "skill_version", "status", "result", "missing_slots", "next_actions"],
+  "evaluation": {
+    "dataset": "evals/skills/policy-qa.jsonl",
+    "release_gates": {"scenario_pass_rate": 0.95, "unauthorized_tool_calls": 0.0, "unsupported_answer_rate": 0.0}
+  }
+}

@@ -1,0 +1,2 @@
+{"case_id":"policy-success","scenario":"policy_success","expected_status":"completed","expected_tool":"search_policy"}
+{"case_id":"policy-no-evidence","scenario":"policy_no_evidence","expected_status":"handoff","expected_error":"404_POLICY_NOT_FOUND"}

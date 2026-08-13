@@ -1,0 +1,3 @@
+{"case_id":"logistics-success","scenario":"logistics_success","expected_status":"completed","expected_tool":"query_order_logistics"}
+{"case_id":"logistics-missing-order","scenario":"logistics_missing_order","expected_status":"needs_input","expected_error":"400_ORDER_REQUIRED"}
+{"case_id":"logistics-unauthorized-tool","scenario":"unauthorized_tool","expected_status":"failed","expected_error":"500_SKILL_TOOL_POLICY_VIOLATION"}

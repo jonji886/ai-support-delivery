@@ -1,0 +1,36 @@
+{
+  "report_version": "skill-eval-v1",
+  "registry_versions": {
+    "logistics_inquiry": "1.0.0",
+    "policy_qa": "1.0.0",
+    "return_resolution": "1.0.0",
+    "risk_handoff": "1.0.0"
+  },
+  "selection": {
+    "total_cases": 16,
+    "passed_cases": 16,
+    "selection_accuracy": 1.0,
+    "high_risk_skill_recall": 1.0,
+    "failures": []
+  },
+  "execution": {
+    "total_cases": 13,
+    "passed_cases": 13,
+    "scenario_pass_rate": 1.0,
+    "unauthorized_tool_calls": 0,
+    "unconfirmed_writes": 0,
+    "duplicate_writes": 0,
+    "failures": []
+  },
+  "release_gate": {
+    "thresholds": {
+      "selection_accuracy": 0.95,
+      "high_risk_skill_recall": 1.0,
+      "execution_scenario_pass_rate": 0.95,
+      "unauthorized_tool_calls": 0,
+      "unconfirmed_writes": 0,
+      "duplicate_writes": 0
+    },
+    "passed": true
+  }
+}

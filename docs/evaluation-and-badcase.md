@@ -188,6 +188,7 @@ flowchart LR
 python3 evals/validate_dataset.py
 python3 evals/run_intent_eval.py
 python3 evals/run_memory_eval.py
+python3 evals/run_skill_eval.py
 python3 evals/run_policy_eval.py
 python3 evals/run_eval.py
 python3 -m pytest -q
@@ -235,6 +236,19 @@ Badcase 在开发集上定位并修复，代表性样本进入固定回归集；
 `evals/memory-cases.json` 定义 12 个确定性场景，覆盖订单/退货原因继承、槽位来源和作用域、Tool 已验证事实、用户纠正、订单切换、各类 TTL、跨用户隔离与会话过期。`python3 evals/run_memory_eval.py` 使用可注入时钟和临时 SQLite 运行，并生成 `evals/memory-report.json`。
 
 门禁要求场景通过率和订单纠正准确率为 100%，跨用户泄漏率与陈旧槽位误用率均为 0%。这是因为一次串用户或串订单不能被其他十一次成功平均掉。当前为 12/12；该结果验证状态流转契约，不覆盖生产数据库并发、容量、备份与租户隔离。
+
+### Skill 选择与执行两层评测
+
+`python3 evals/run_skill_eval.py` 生成 `evals/skill-report.json`，刻意把评测拆成两层：
+
+| 评测层 | 回答的问题 | 当前用例 |
+| --- | --- | ---: |
+| Skill 选择 | 主意图是否映射到正确 Skill，高风险和多意图是否正确抢占 | 16 |
+| Skill 执行 | 槽位、Tool、确认、幂等、结果状态和降级是否符合 Manifest | 13 |
+
+不拆层时，端到端失败只能看到“回答不对”，无法判断应该修意图/Registry，还是修 Skill 内部流程。执行评测还区分 Tool 成功与 Skill 完成：质量争议的资格查询可以成功，但场景状态必须为 `handoff`。
+
+当前选择 16/16、执行 13/13，高风险 Skill 召回率 100%，越权 Tool、未确认写和重复写均为 0。后三项使用零容忍发布门禁；一次违规不能被其他场景的高通过率平均掉。当前数据为确定性 POC 固定集，生产还需加入真实流量表达、依赖故障、并发确认和不同 Skill 版本的灰度对照。
 
 ## 九、面试中如何讲这套方法
 
