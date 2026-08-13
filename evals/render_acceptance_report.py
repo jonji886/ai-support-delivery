@@ -56,7 +56,7 @@ def render() -> None:
 
 - Docker Compose 容器网络环境的独立采样尚未执行，当前环境没有 Docker CLI。
 - 浏览器级 E2E 尚未在本环境执行：当前未检测到 Playwright/Selenium 或可用浏览器运行时；已完成 API、前端源码契约和 JavaScript 语法验证。
-- 当前前端仍是演示工作台，不包含真实登录、客服自动分配和生产级实时质量看板；会话、工单和退货申请已使用 SQLite 持久化，事件指标仍为进程内存储。
+- 当前前端仍是演示工作台，不包含真实登录、客服自动分配和生产级实时质量看板；会话、工单、退货申请和质量事件已使用 SQLite 持久化。
 - RAG 本地评测使用确定性 embedding/reranker Provider，不代表生产模型效果。
 
 ## 验收边界

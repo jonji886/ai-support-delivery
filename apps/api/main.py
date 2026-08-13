@@ -36,7 +36,7 @@ policy_service = PolicySearchService.from_default_data()
 ticket_service = TicketService()
 return_application_service = ReturnApplicationService(return_service.orders)
 deepseek = DeepSeekClient()
-events = EventStore()
+events = EventStore(os.getenv("EVENTS_DB_PATH", "runtime/events.db"))
 conversations = ConversationStore()
 STAFF_IDENTITIES = {
     "agent": "agent-demo-001",

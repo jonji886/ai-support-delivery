@@ -69,7 +69,7 @@ def main() -> None:
         passed = passed and handoff == case["expected_handoff"]
         # The endpoint is in-process here, so inspect the app event stream to
         # verify that the response came from an allowed controlled Tool.
-        tool_names = {event.get("tool_name") for event in app_events.events if event.get("trace_id") == body.get("trace_id")}
+        tool_names = {event.get("tool_name") for event in app_events.events_for_trace(body.get("trace_id"))}
         passed = passed and bool(tool_names.intersection(case["allowed_tools"]))
         results.append({"case_id": case["case_id"], "passed": passed, "status": response.status_code, "response": body})
 

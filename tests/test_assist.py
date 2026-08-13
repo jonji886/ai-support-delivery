@@ -85,6 +85,30 @@ def test_supervisor_can_read_metrics_but_consumer_cannot() -> None:
     assert "tool_calls" in allowed.json()
 
 
+def test_supervisor_metrics_include_business_explanations_and_trend_fields() -> None:
+    response = client.get("/admin/metrics", headers={"X-Role": "supervisor"})
+    body = response.json()
+    assert response.status_code == 200
+    assert "tool_success_rate" in body
+    assert "handoff_rate" in body
+    assert "citation_rate" in body
+    assert "risk_count" in body
+    assert "intent_distribution" in body
+    assert "error_distribution" in body
+    assert "trend" in body
+
+
+def test_event_store_persists_events_across_instances(tmp_path) -> None:
+    from apps.api.support.events import EventStore
+
+    db_path = str(tmp_path / "events.db")
+    first = EventStore(db_path)
+    first.append(event_type="conversation", trace_id="persisted-trace", intent="logistics", success=True, handoff=False)
+    second = EventStore(db_path)
+    assert second.events_for_trace("persisted-trace")[0]["intent"] == "logistics"
+    assert second.metrics()["conversation_count"] == 1
+
+
 def test_low_confidence_is_handed_to_human(monkeypatch) -> None:
     from apps.api.main import deepseek
     monkeypatch.setattr(deepseek, "classify", lambda message, trace_id: {"intent": "unknown", "confidence": 0.2, "margin": 0.01})

@@ -110,20 +110,49 @@ def test_homepage_explains_quick_start_and_role_guides() -> None:
     source = HTML.read_text(encoding="utf-8")
     assert "三步快速上手" in source
     assert "选择角色" in source
-    assert "完成核心动作" in source
-    assert "观察交付结果" in source
-    assert "data-onboarding-role=\"consumer\"" in source
-    assert "data-onboarding-role=\"agent\"" in source
-    assert "data-onboarding-role=\"supervisor\"" in source
-    assert "data-onboarding-role=\"implementer\"" not in source
+    assert "完成一个动作" in source
+    assert "看懂交付结果" in source
+    assert "不用准备数据，按当前角色直接开始。" in source
     assert "function updateOnboarding(role)" in source
 
 
 def test_homepage_uses_plain_language_for_tool_verification() -> None:
     source = HTML.read_text(encoding="utf-8")
-    assert "从用户提问，到业务信息核实，再到人工接管" in source
+    assert "用 AI 处理售后问题，但每一步都有依据" in source
     assert "系统会先核对订单、物流和规则" in source
     assert "Tool 核验" not in source
+
+
+def test_homepage_explains_what_why_and_how_before_secondary_scenarios() -> None:
+    source = HTML.read_text(encoding="utf-8")
+    assert "它是做什么的？" in source
+    assert "为什么要用？" in source
+    assert "你会看到什么？" in source
+    assert 'aria-label="开始体验"' in source
+    assert "推荐体验流程" in source
+
+
+def test_supervisor_dashboard_explains_metrics_and_supports_actionable_visuals() -> None:
+    source = HTML.read_text(encoding="utf-8")
+    assert "判断系统是否稳定、问题在哪里、下一步做什么" in source
+    assert "业务核实成功率" in source
+    assert "转人工率" in source
+    assert "知识依据覆盖率" in source
+    assert "最近质量趋势" in source
+    assert "问题类型分布" in source
+    assert "风险原因排行" in source
+    assert "function renderTrend(trend)" in source
+    assert "function renderDistribution(targetId,data,labelMap)" in source
+    assert "metrics.handoff_rate" in source
+    assert "function formatPercent(value)" in source
+    assert "formatPercent(metrics.tool_success_rate)" in source
+    assert "formatPercent(metrics.handoff_rate)" in source
+    assert "formatPercent(metrics.citation_rate)" in source
+    assert "const riskLabels=" in source
+    assert "function renderRiskDistribution(data)" in source
+    assert "退换货信息不完整" in source
+    assert "risk-code" in source
+    assert "position:relative;flex:1;height:155px" in source
 
 
 def test_homepage_has_single_role_aware_primary_task_and_direct_role_actions() -> None:
