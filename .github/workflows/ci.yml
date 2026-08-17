@@ -144,17 +144,50 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt -q
       - run: python3 evals/run_memory_eval.py
+      - run: python3 evals/run_memory_eval_extended.py
       - name: Check memory gates
         run: |
           python3 -c "
           import json
           report = json.load(open('evals/memory-report.json'))
-          leak = report.get('cross_user_leak_rate', 1)
-          stale = report.get('stale_slot_misuse_rate', 1)
-          print(f'Cross-user leak: {leak:.2%}, stale slot misuse: {stale:.2%}')
+          leak = report.get('cross_user_leakage_rate', 1)
+          stale = report.get('stale_slot_usage_rate', 1)
+          print(f'Working memory: leak={leak:.2%}, stale={stale:.2%}')
           assert leak == 0, f'Cross-user leak: {leak:.2%}'
-          assert stale == 0, f'Stale slot misuse: {stale:.2%}'
+          assert stale == 0, f'Stale slot: {stale:.2%}'
           "
+          python3 -c "
+          import json
+          report = json.load(open('evals/memory-eval-extended-report.json'))
+          pass_rate = report.get('pass_rate', 0)
+          leak = report.get('cross_user_leakage_rate', 1)
+          pollution = report.get('memory_pollution_rate', 1)
+          print(f'Extended: pass={pass_rate:.2%}, leak={leak:.2%}, pollution={pollution:.2%}')
+          assert leak == 0, f'Cross-user leak: {leak:.2%}'
+          assert pollution == 0, f'Memory pollution: {pollution:.2%}'
+          "
+
+  frontend-build:
+    name: Frontend Build (React + TypeScript)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        working-directory: apps/web
+        run: npm install
+      - name: TypeScript check
+        working-directory: apps/web
+        run: npx tsc --noEmit
+      - name: Build
+        working-directory: apps/web
+        run: npm run build
+      - name: Verify build output
+        run: |
+          test -f apps/web/dist/index.html
+          test -d apps/web/dist/assets
 
   build:
     name: Build Verification

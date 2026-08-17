@@ -16,6 +16,10 @@ services:
       POLICY_MIN_EVIDENCE_SCORE: ${POLICY_MIN_EVIDENCE_SCORE:-0.65}
       POLICY_MIN_VECTOR_SCORE: ${POLICY_MIN_VECTOR_SCORE:-0.35}
       RAG_RETRIEVAL_STRATEGY: ${RAG_RETRIEVAL_STRATEGY:-fusion}
+      VECTOR_STORE_PROVIDER: ${VECTOR_STORE_PROVIDER:-local}
+      CHROMA_PERSIST_PATH: ${CHROMA_PERSIST_PATH:-runtime/chroma}
+      MEMORY_DB_PATH: ${MEMORY_DB_PATH:-runtime/memory.db}
+      CONVERSATION_DB_PATH: ${CONVERSATION_DB_PATH:-runtime/conversations.db}
       CONVERSATION_TTL_HOURS: ${CONVERSATION_TTL_HOURS:-24}
       ORDER_SLOT_TTL_MINUTES: ${ORDER_SLOT_TTL_MINUTES:-1440}
       RETURN_REASON_SLOT_TTL_MINUTES: ${RETURN_REASON_SLOT_TTL_MINUTES:-60}
@@ -35,16 +39,22 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+
   web:
-    image: nginx:1.27-alpine
+    build:
+      context: ../apps/web
+      dockerfile: Dockerfile
     depends_on:
       api:
         condition: service_healthy
     ports:
       - "8080:80"
-    volumes:
-      - ../apps/web:/usr/share/nginx/html:ro
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
 volumes:
   runtime-data:

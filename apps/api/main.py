@@ -24,9 +24,10 @@ from apps.api.support.events import EventStore
 from apps.api.support.conversations import ConversationStore
 from apps.api.support.observability import TraceStore
 from apps.api.agent.graph import SupportGraphDependencies, build_support_graph
+from apps.api.memory import MemoryManager
 
 app = FastAPI(title="AI Support Delivery API", version="0.1.0")
-_cors_origins = ["http://localhost:8080", "http://127.0.0.1:8080"]
+_cors_origins = ["http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:5173", "http://127.0.0.1:5173"]
 _web_public = os.environ.get("WEB_PUBLIC_ORIGIN")
 if _web_public:
     _cors_origins.append(_web_public)
@@ -46,6 +47,7 @@ deepseek = DeepSeekClient()
 events = EventStore(os.getenv("EVENTS_DB_PATH", "runtime/events.db"))
 traces = TraceStore()
 conversations = ConversationStore()
+memory_manager = MemoryManager(conversation_store=conversations)
 intent_catalog = IntentCatalog.from_default_data()
 skill_registry = SkillRegistry.from_default_manifests()
 skill_executor = SkillExecutor(skill_registry, traces)
@@ -328,9 +330,63 @@ def resolve_ticket(ticket_id: str, request: ResolveTicketRequest, x_role: Option
 def assist(request: AssistRequest, x_user_id: Optional[str] = Header(default=None)) -> JSONResponse:
     """Run the controlled LangGraph workflow; tools remain the source of truth."""
     trace_id = new_trace_id()
+
+    # Memory: record conversation message before agent processing
+    if x_user_id and request.session_id:
+        memory_manager.record_conversation_message(
+            user_id=x_user_id,
+            session_id=request.session_id,
+            role="user",
+            content=request.message,
+        )
+        # Extract and persist long-term memory candidates from user message
+        memory_manager.process_user_message(
+            request.message,
+            user_id=x_user_id,
+            session_id=request.session_id,
+        )
+
     final_state = support_graph.invoke({"request": request, "user_id": x_user_id, "trace_id": trace_id})
     result = final_state["result"]
+
+    # Memory: record AI response and inject memory context into response
+    if x_user_id and request.session_id and result.success and result.data:
+        answer = result.data.get("answer", "") if isinstance(result.data, dict) else ""
+        if answer:
+            memory_manager.record_conversation_message(
+                user_id=x_user_id,
+                session_id=request.session_id,
+                role="assistant",
+                content=answer,
+            )
+        # Retrieve memory context for Inspector visibility
+        memory_context = memory_manager.retrieve_context(
+            user_id=x_user_id,
+            session_id=request.session_id,
+            current_intent=final_state.get("intent"),
+            current_order_id=final_state.get("effective_order_id"),
+        )
+        if memory_context:
+            result.data["memory_context"] = memory_context
+
     return JSONResponse(status_code=result.http_status, content=result.model_dump())
+
+
+@app.get("/admin/memory/{user_id}")
+def admin_memory_inspector(
+    user_id: str,
+    memory_type: Optional[str] = Query(default=None),
+    x_role: Optional[str] = Header(default=None),
+) -> JSONResponse:
+    """Memory Inspector — view all memory for a user."""
+    if x_role not in {"supervisor", "implementer"}:
+        return JSONResponse(status_code=403, content={"success": False, "error_code": "403_ROLE_FORBIDDEN", "message": "需要主管或实施人员角色。"})
+    records = memory_manager.list_memory(user_id, memory_type=memory_type)
+    return JSONResponse(status_code=200, content={
+        "user_id": user_id,
+        "memories": [r.to_dict() for r in records],
+        "total": len(records),
+    })
 
 
 @app.get("/admin/metrics")
