@@ -1,566 +1,252 @@
 # 售后交付工作台
 
-跨境电商售后 AI 客服交付 POC，面向 AI 产品、解决方案和交付岗位作品集展示。
+[![CI](https://github.com/user/ai-support-delivery/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/user/ai-support-delivery/actions/workflows/ci.yml)
 
-它演示一个真实售后场景中的完整闭环：消费者提问 → 识别意图 → 选择场景 Skill → 受控 Tool 核验 → 规则/业务判断 → 用户确认写操作 → 人工接管 → 质量评测与 badcase 修复。
+> 一个面向跨境电商售后的企业级 AI Agent POC，通过受控的 Agent → Skill → Tool 架构处理物流查询、规则问答、退货等任务，并通过权限控制、确认机制、人工接管、评测和可观测机制控制生产风险。
 
-这是可复现、可评测的演示系统，不是生产退款系统。订单、物流、规则和工单均为匿名模拟数据，当前结果不能直接代表客户生产收益。
+**项目定位**：Production-oriented POC / Portfolio Project
 
-## 目录
+**核心技术**：FastAPI · LangGraph · Agent/Skill/Tool · RAG · Human-in-the-loop · Evaluation · Observability · Integration Reliability
 
-1. **项目与场景**
-   - [30 秒了解项目](#30-秒了解项目)
-   - [解决什么问题](#解决什么问题)
-   - [角色与页面](#角色与页面)
-   - [业务流程](#业务流程)
-   - [技术架构](#技术架构)
-   - [当前能力边界](#当前能力边界)
-2. **产品与能力设计**
-   - [AI 产品判断与取舍](#ai-产品判断与取舍)
-   - [场景化 Skill 如何封装企业 AI 能力](#场景化-skill-如何封装企业-ai-能力)
-3. **评测与质量证据**
-   - [当前评测结果](#当前评测结果)
-   - [评测与 Badcase 质量闭环](#评测与-badcase-质量闭环)
-4. **运行与验证**
-   - [快速开始](#快速开始)
-   - [DeepSeek 配置](#deepseek-配置)
-   - [API 示例](#api-示例)
-   - [测试与验收](#测试与验收)
-5. **工程与生产化**
-   - [项目结构](#项目结构)
-   - [已知限制与生产化方向](#已知限制与生产化方向)
-   - [相关文档](#相关文档)
+---
 
-## 30 秒了解项目
+## 产品效果
 
-| 你可能关心的问题 | 本项目的回答 |
-| --- | --- |
-| 做了什么 | 一个覆盖消费者自助服务、受控业务核验、写操作确认、人工接管和质量运营的售后 AI 工作台 |
-| AI 负责什么 | 理解自然语言、识别意图、选择场景 Skill、组织基于证据的回答 |
-| 系统负责什么 | Tool 提供订单与规则事实；Skill 约束流程、权限、确认、降级和状态；人工处理高风险例外 |
-| 如何证明有效 | 分别评测意图、短期状态、Skill 选择与执行、RAG 组件和端到端业务契约，并以高风险事件作为硬门禁 |
-| 当前做到什么程度 | 本地核心固定集 58/58；RAG 挑战集 76.67%，真实保留未见表达上的泛化差距 |
-| 当前不能证明什么 | 匿名模拟数据和本地延迟不能证明真实客户的自动解决率、ROI、生产并发能力或真实模型效果 |
+### 场景 A：物流查询
 
-### 核心概念
+消费者输入 → 意图识别 → Skill 选择 → Tool 查询 → 真实业务状态返回
 
-| 概念 | 在本项目中的含义 |
-| --- | --- |
-| Intent Catalog | 集中管理意图定义、风险、正反例和 Tool 权限的版本化业务目录 |
-| Agent | 理解当前诉求并选择下一项场景能力的调度层 |
-| Skill | 完成一类场景任务的标准流程，包含槽位、权限、确认、降级和评测 |
-| Tool | 查询事实或执行动作的原子业务接口，负责校验、权限、幂等和错误契约 |
-| 短期状态 | 带来源、用户/订单作用域和过期时间的结构化会话信息，不等于保存聊天全文 |
-| 发布门禁 | 指标或风险事件未达到要求时阻止发布的验收规则 |
-
-### 5 分钟演示剧本
-
-1. 以消费者角色从“演示导览”进入物流场景，确认页面能返回订单状态、最新节点和预计到达时间。
-2. 在同一会话追问“那预计什么时候到？”，展示系统继承订单上下文，不要求重复输入订单号。
-3. 进入退货场景，先展示资格判断，再点击消息中的“确认提交退货申请”，强调“待审核”不等于退款完成。
-4. 输入“我要更换支付账户”，展示独立的 `payment_sensitive` 路由、人工工单和停止自动处置。
-5. 切换人工客服，进入“人工接管”查看摘要，回复消费者并更新工单状态；消费者侧通过查询接口看到最新回复。
-6. 切换客服主管查看指标，并打开一个 badcase，说明“错误路由 → 根因 → 修复 → 固定回归”的质量闭环。
-
-演示时重点说明产品取舍：模型负责理解和组织问题，业务 Tool 负责证明订单/规则事实，人工负责支付、争议和无法确认的例外。
-
-## 解决什么问题
-
-### 客户假设
-
-本 POC 面向需要处理大量售后咨询的跨境电商团队：
-
-| 维度 | 待确认问题 |
-| --- | --- |
-| 目标客户 | 中大型跨境电商的售后客服和交付团队 |
-| 高频咨询 | 物流查询、退货资格、退款/投诉、规则时效 |
-| 业务系统 | OMS、物流查询、售后工单、规则/知识库 |
-| 主要痛点 | 客服在多个系统间切换；规则版本分散；事实型问题重复；高风险问题不能交给模型自由回答 |
-| 业务目标 | 先自动处理低风险、可验证的问题，同时缩短复杂问题转人工的路径 |
-| 需要客户提供的基线 | 会话量、问题类型分布、人工处理时长、人工成本、投诉/退款争议成本和现有转人工率 |
-
-### 为什么优先做这四类场景
-
-物流和退货资格通常是高频、规则相对明确、适合受控查询的场景；投诉/退款争议则用于验证风险边界和人工接管能力。四类场景组合起来，既能展示自动化收益，也能展示“不该自动化时如何停下来”。
-
-## 角色与页面
-
-| 角色 | 可访问页面 | 主要任务 |
-| --- | --- | --- |
-| 消费者 | 演示导览、消费者对话 | 咨询售后问题、确认退货申请 |
-| 人工客服 | 消费者对话（只读）、人工接管 | 查看上下文、审核申请、处理工单 |
-| 客服主管 | 人工接管、基础指标、知识与规则 | 查看队列、质量和风险、审核/升级 |
-| 实施管理员（内部角色） | 演示导览、基础指标、知识与规则 | 配置/验证规则、评测和交付质量；不作为普通用户角色展示 |
-
-页面导航和右侧快捷操作均按角色白名单裁剪。角色切换后只能进入当前角色允许的页面。
-
-## 业务流程
-
-```mermaid
-flowchart LR
-    A[消费者提问] --> S[LangGraph 加载会话]
-    S --> B[意图识别]
-    B --> C{业务类型}
-    C -->|物流| D[query_order_logistics]
-    C -->|退货| E[check_return_eligibility]
-    C -->|规则| F[search_policy]
-    C -->|投诉/支付敏感/低置信度| G[创建人工工单]
-    E --> H{资格通过?}
-    H -->|是| I[消息内确认卡片]
-    I --> J[submit_return_application]
-    J --> K[人工审核队列]
-    K --> L[审核通过/不通过]
-    G --> M[人工客服工单详情]
-    M --> N[客服回复并更新状态]
+```
+用户：订单到哪里了？
+系统：订单 OD202608001 当前状态为"运输中"。
+      最新节点：包裹已到达当地分拨中心（Los Angeles, US）。
+      预计 2026-08-15T18:00:00Z 到达。
 ```
 
-## 技术架构
+### 场景 B：高风险问题转人工
 
-### 整体架构
+Agent 不是什么都自动回答 → Risk Policy → Human Handoff
+
+```
+用户：帮我修改银行卡收款人
+系统：该问题涉及支付敏感信息，已停止自动处理并创建人工工单。
+      [工单号: TK202608xxx, 分类: payment_sensitive, 优先级: urgent]
+```
+
+### 场景 C：Trace / Evaluation / Supervisor
+
+系统不是黑盒 → 可以定位问题 → 可以做回归评测
+
+```bash
+# 回放完整链路
+curl -s http://127.0.0.1:8000/admin/traces/<trace_id> -H 'X-Role: supervisor'
+# → HTTP → graph.load_context → graph.classify_intent → skill.* → tool.*
+```
+
+> 截图请参见 [`docs/assets/`](docs/assets/)（如已生成）。
+
+---
+
+## 业务问题与价值
+
+| 维度 | 说明 |
+| --- | --- |
+| **目标客户** | 中大型跨境电商售后客服和交付团队 |
+| **高频咨询** | 物流查询、退货资格、退款/投诉、规则时效 |
+| **业务痛点** | 客服在多个系统间切换；规则版本分散；事实型问题重复；高风险问题不能交给模型自由回答 |
+| **业务目标** | 先自动处理低风险、可验证的问题，同时缩短复杂问题转人工的路径 |
+
+核心产品判断：**模型理解用户，业务 Tool 证明事实，人工处理例外。**
+
+---
+
+## 核心能力
+
+| 能力 | 说明 |
+| --- | --- |
+| **意图识别与路由** | 版本化 Intent Catalog，确定性安全信号优先，模型仅处理长尾 |
+| **场景 Skill** | 4 个版本化 Skill：物流查询、退货解决、规则问答、风险转人工 |
+| **受控 Tool** | 订单/物流/退货/工单/规则检索，统一错误契约和审计 |
+| **写操作控制** | 用户确认 + 幂等键 + 订单归属校验 |
+| **Human-in-the-loop** | 高风险问题停止自动处置，生成摘要并创建工单 |
+| **混合 RAG** | 生命周期硬过滤 → 关键词/向量召回 → RRF 融合 → 证据门禁 → 片段级引用 |
+| **可观测性** | HTTP → LangGraph → Skill → Tool 父子 Span，按窗口聚合失败率和 P50/P95 |
+| **集成可靠性** | timeout / retry / circuit breaker / error mapping / fault injection |
+| **评测体系** | 核心 58 条 + 意图 60 条 + 记忆 12 条 + Skill 29 条 + RAG 100 条 |
+
+---
+
+## Architecture
 
 ```mermaid
 flowchart TB
     U[消费者 / 人工客服 / 客服主管] --> W[静态 Web 工作台]
     W --> API[FastAPI API]
     API --> G[LangGraph 显式状态图]
-
-    G --> C[ConversationStore]
-    C --> DB[(SQLite 会话状态)]
-    G --> I[Intent Catalog<br/>DeepSeek 可选回退]
-    G --> R[Skill Registry]
-    R --> E[Skill Executor / Handler]
-
+    G --> R[Skill Registry / Executor]
+    R --> E[场景 Skill Handler]
     E --> T[受控 Tool / Service]
     E --> K[混合 RAG]
     E --> H[人工接管]
-    T --> D[模拟 OMS / 物流<br/>工单与退货申请存储]
+    T --> IA[IntegrationAdapter<br/>timeout / retry / circuit breaker]
+    IA --> D[模拟 OMS / 物流 / 工单]
     K --> P[版本化规则知识库]
-
-    API -. HTTP Trace .-> O[Trace / Span 与质量事件]
+    API -. HTTP Trace .-> O[TraceStore / EventStore]
     G -. 节点与 Skill 链路 .-> O
 ```
 
-这套架构把自然语言理解、场景流程和业务执行拆开：LangGraph 负责“按什么顺序处理”，Skill 负责“如何完成一类任务”，Tool/Service 负责“事实是否正确、操作是否允许”。模型输出不能绕过后两层的确定性校验。
+**三层架构**：Agent 负责调度，Skill 封装场景流程，Tool 执行原子操作。模型输出不能绕过 Skill 权限和 Tool 校验。
 
-### 技术组件与职责边界
+更多设计见：
+- [Solution Design](docs/solution-design.md) — 架构、信任边界、部署架构、退货时序
+- [API Contracts](docs/api-contracts.md) — API/Tool 契约
+- [ADR](docs/adr/) — 重要技术决策
 
-| 技术或模块 | 在项目中的职责 | 明确不负责什么 |
-| --- | --- | --- |
-| 静态 Web 工作台 | 展示消费者、客服和主管的演示流程 | 不承担最终权限和业务状态校验 |
-| FastAPI | 提供 API 契约、请求校验、身份参数和统一错误响应 | 不替代场景 Skill 决策 |
-| LangGraph | 编排上下文加载、意图分类、Skill 选择、条件路由和结果汇总 | 不直接拥有业务事实，不绕过 Skill/Tool 权限 |
-| Intent Catalog | 管理意图定义、风险优先级、正反例和 Tool 权限 | 不直接执行业务操作 |
-| DeepSeek | 可选处理目录规则未命中的长尾意图表达 | 不生成订单事实、退货结论或规则引用 |
-| Skill Registry / Executor | 加载版本化 Manifest，校验槽位、阶段、Tool 白名单、确认和降级 | 不绕过 Tool 自身的认证、幂等和数据校验 |
-| Tool / Service | 查询订单与规则事实，执行工单和退货申请等原子操作 | 不理解完整用户场景，不自主选择其他 Tool |
-| 混合 RAG | 生命周期硬过滤、关键词/向量召回、RRF 融合、证据门禁和引用 | 不回答实时订单状态，不让过期规则进入候选 |
-| SQLite | 持久化 POC 会话、工单、申请、质量事件和 Trace | 不代表生产级多租户与高并发存储方案 |
-| Trace / Span | 回放 HTTP → LangGraph → Skill → Model/RAG/Tool 链路 | 不记录用户原文、令牌、地址等敏感信息 |
+---
 
-### 为什么使用 LangGraph
+## Key Design Decisions
 
-| 设计问题 | 本项目的选择与原因 |
+| 决策 | 原因 |
 | --- | --- |
-| 为什么不只用 Prompt 或普通路由 | 售后流程包含多轮槽位补充、风险抢占、只读判断、用户确认、写操作和人工接管；显式状态图让阶段、分支和失败路径可追踪、可测试 |
-| LangGraph 的权限边界是什么 | 只负责流程编排；Tool 权限、订单归属、用户确认、幂等和规则有效期仍由 Skill Executor 与 Tool/Service 的确定性代码校验 |
-| 为什么不用 LangGraph 保存全部会话状态 | 图状态只承载本轮执行数据；跨请求会话由 SQLite `ConversationStore` 负责。当前不启用 checkpointer，避免两个持久化来源双写和状态不一致 |
-| 引入它有什么成本 | 增加状态模型、节点契约和框架依赖；如果场景始终是无写操作的单轮问答，普通服务编排会更轻量 |
-| 为什么仍接受这个成本 | 本项目要验证可扩展的多步骤售后任务、人工接管和可观测链路，显式编排带来的可测试性和可解释性高于额外复杂度 |
+| LLM 只分类意图，不生成业务事实 | 订单状态和规则结论必须来自受控 Tool |
+| Agent → Skill → Tool 三层 | 场景规则可复用、可版本化、可独立评测 |
+| 写操作必须用户确认 + 幂等键 | 防止模型替用户执行高风险操作 |
+| 高风险问题默认转人工 | 错误成本高于少自动化一次 |
+| 规则生命周期作为硬门禁 | 过期规则不能进入候选 |
+| Integration Layer 统一控制 | 外部系统不可靠时正确失败，不产生假成功 |
+| 评测分选择层和执行层 | 端到端失败时可定位是选错 Skill 还是执行错误 |
 
-更完整的节点、状态、RAG 和可观测性设计见 [`docs/solution-design.md`](docs/solution-design.md)，重要取舍见 [`docs/adr/`](docs/adr/)。
+---
 
-## 当前能力边界
+## Evaluation Results
 
-### 消费者体验
-
-- 物流查询：返回订单状态、承运商、最新物流节点、地点和预计到达时间。
-- 退货资格：根据订单状态、签收时间、品类规则和退货原因返回资格、依据、规则版本和下一步。
-- 规则问答：先按 `status/effective_from/effective_to/region` 硬过滤，再执行关键词与向量召回、RRF 融合和证据充分性门禁；回答附实际支持片段、标题和版本。本地消融未证明测试 reranker 有边际收益，默认使用 `fusion`；生产接入真实模型后必须重新评测才能启用 `fusion_rerank`。
-- 投诉/退款争议：停止自动处置，创建人工工单并生成会话摘要。
-- 常见问题快捷填充：仅填入输入框，仍由消费者确认、修改并发送。
-- 已绑定订单作为默认上下文，减少重复输入订单号；每个槽位带来源、置信度、作用域和独立 TTL，用户纠正订单后旧订单状态立即失效。
-- 退货资格通过后，必须点击会话消息中的“确认提交退货申请”才执行写操作。
-
-### 人工客服与主管体验
-
-- 人工客服可查看人工接管队列、投诉工单和待审核退货申请。
-- 人工接管队列支持服务端分页，以及按工单/退货申请类型、处理状态、工单号/申请单号/订单号/用户诉求搜索。
-- 工单详情展示会话摘要、订单上下文、Tool 结果、已执行动作、回复框和处理状态。
-- 支持将工单更新为“已解决”“待补充信息”或“已升级主管”。
-- 退货审核支持“审核通过”和“审核不通过”；驳回必须填写原因。
-- 提供基础质量指标和风险事件视图，用于 POC 演示；尚未实现生产级实时监控、客服自动分配和完整质量运营看板。
-
-### 安全与可靠性
-
-- DeepSeek 仅作为可选的意图分类器，不生成订单事实、退货结论或规则引用。
-- `config/intent-catalog.json` 统一定义六类意图的边界、风险、责任人、正反例和 Tool 权限；模型只处理目录未匹配的长尾表达，输出仍受目录约束。
-- 支付敏感/投诉信号优先于普通意图；分类结果保留次意图并写入人工摘要，最终执行前再次校验“意图—Tool”权限。
-- 模型未配置、超时或失败时回退到确定性的本地路由。
-- 订单事实来自受控 Tool，并校验 `X-User-Id` 与订单归属。
-- 写操作需要明确确认和幂等键；“待审核”不代表退款完成。
-- Tool 统一返回 `success`、`data`、`error_code`、`message`、`trace_id`。
-- 每个 HTTP 请求返回 `X-Trace-Id`；`/assist` 可回放到 LangGraph、Skill 及其模型、RAG、Tool 子调用，并按时间窗口分析失败率和 P50/P95。
-- 低置信度、无依据、订单异常和高风险争议进入人工处理，不以模型猜测替代事实。
-
-## AI 产品判断与取舍
-
-本项目的核心判断不是“让模型回答所有问题”，而是把模型能力限制在适合它的环节，把业务事实和高风险动作交给可审计的系统：
-
-| 产品决策 | 原因 |
-| --- | --- |
-| 模型主要负责意图理解 | 自然语言表达复杂，但订单状态和规则结论必须来自业务数据 |
-| 订单、物流和申请状态只允许来自受控 Tool | 防止模型编造事实，便于审计、回放和定位错误 |
-| 规则回答必须带生效版本和来源 | 规则会变化；客服和客户必须知道答案依据 |
-| 退货申请采用“判断 → 用户确认 → 提交”两阶段 | 资格判断是只读操作，提交申请是写操作，不能让模型替用户执行 |
-| 投诉、支付敏感、退款争议默认转人工 | 这类问题的错误成本高于少自动化一次 |
-| 用版本化 Intent Catalog 管意图，而不是只写 Prompt | 让业务边界、责任人、风险优先级、正反例和 Tool 权限成为可评测、可审计、可回滚的产品资产 |
-| 多意图保留“主意图 + 次意图” | 高风险诉求可以抢占自动执行，同时不丢失用户同轮提出的物流、退货等后续诉求 |
-| 短期记忆只保存结构化业务状态 | 保留连续追问体验，同时避免聊天摘要、过期事实或旧订单信息污染业务判断 |
-| 在 Agent 与 Tool 之间增加场景 Skill | 把完成一类任务所需的槽位、流程、权限、确认、降级和评测封装成可复用、可版本化的能力，而不是把 API 改名为 Skill |
-| 模型失败时回退到确定性路由 | AI 不可用时，低风险基础路径仍可演示；失败不能导致无依据回答 |
-| 没有可靠依据时拒答或转人工 | 在售后场景中，可信度优先于覆盖率 |
-| 规则生命周期作为硬门禁 | 过期规则不能依赖排序降权；它必须在候选生成前被排除 |
-| 检索相关与证据充分分开 | 主题相似不代表文档能回答问题；证据分数不足时拒答 |
-| 开发集、回归集、挑战集分开 | 避免用调过参数的题目证明泛化能力，同时保留稳定发布契约 |
-| 对四种检索链路做消融 | 用效果、拒答安全性、延迟和成本证明组件价值，避免技术堆砌 |
-
-因此，这不是让 Agent 自主修改订单或直接退款的系统，而是“模型理解用户，业务 Tool 证明事实，人工处理例外”的交付方案。
-
-`/assist` 已使用 LangGraph 显式状态图编排：先加载用户隔离的会话上下文，再分类意图并选择场景 Skill。Agent 负责“现在用哪个能力”，Skill 负责“如何完成这类任务”，Tool 负责原子业务操作；LangGraph 不获得绕过 Skill 权限、用户确认或 Tool 幂等校验的能力。
-
-## 场景化 Skill 如何封装企业 AI 能力
-
-### Tool 不等于 Skill
-
-可以把三层关系理解为：Agent 是调度员，Skill 是一套标准作业流程，Tool 是执行其中一个动作的业务接口。
-
-| 层级 | 负责什么 | 本项目示例 |
-| --- | --- | --- |
-| Agent / 编排器 | 理解当前诉求，决定选择哪个 Skill、先处理哪个风险 | LangGraph + Intent Catalog |
-| 场景 Skill | 完成一类用户任务，封装槽位、流程、权限、确认、降级和输出 | `return_resolution` |
-| Tool | 执行一个原子、可审计的业务动作 | `check_return_eligibility`、`submit_return_application` |
-
-如果只是把 `query_order_logistics` 改名为 `logistics_skill`，它仍然只是一个 Tool，因为它没有说明缺订单号怎么追问、能否继承上下文、失败何时转人工、允许调用哪些其他 Tool，也没有独立版本和评测门禁。
-
-### 当前封装的四个 Skill
-
-| Skill | 完成的场景任务 | 允许使用的主要 Tool | 关键边界 |
-| --- | --- | --- | --- |
-| `logistics_inquiry` | 补齐订单上下文并返回实时物流 | `query_order_logistics` | 不允许提交退货或创建投诉工单 |
-| `return_resolution` | 收集退货信息、判断资格、确认后提交申请 | `check_return_eligibility`、`submit_return_application` | 写操作必须明确确认并使用幂等键 |
-| `policy_qa` | 基于当前有效规则和充分证据回答 | `search_policy` | 无充分证据不输出确定结论 |
-| `risk_handoff` | 对投诉、支付敏感和低置信度问题安全转人工 | `create_service_ticket`、`handoff_human` | 不允许查询或修改普通业务事实 |
-
-每个 Skill Manifest 都包含 `skill_id/version/owner`、触发意图、正反例、必需槽位、执行阶段、允许/禁止 Tool、写操作确认、人工接管条件、统一输出和发布门禁。Registry 在启动时检查重复意图归属和配置完整性；Executor 在执行前强制检查意图边界、Tool 权限与用户确认，并把 `skill.id/version/phase/status` 写入 Trace。
-
-### 为什么优先把退货做成完整 Skill
-
-退货场景最能检验 Skill 是否只是“接口包装”：它需要多轮补充订单号和退货原因，先调用只读 Tool 判断资格，再向用户展示确认动作，确认后才能调用写 Tool；提交必须幂等，质量争议、规则缺失或连续未解决还要转人工。
-
-```text
-return_resolution
-→ 检查 user_id / order_id / return_reason
-→ 缺参数：needs_input
-→ check_return_eligibility（只读）
-→ 质量争议：handoff
-→ 符合资格：等待用户确认
-→ submit_return_application（写操作 + 幂等键）
-→ 返回“待审核”，不声称退款完成
-```
-
-因此，一个 Tool 调用成功也不等于 Skill 自动完成。例如质量争议的资格 Tool 成功返回了 `requires_human=true`，Skill 状态仍应是 `handoff`；否则运营看板会把需要人工的场景误算为自动解决。
-
-### 为什么评测必须分成“选择”和“执行”两层
-
-整体 Agent 用例失败时，可能是选错 Skill，也可能是 Skill 内部缺槽位、调用错 Tool 或降级错误。如果只看端到端通过率，修复方向不清楚。因此本项目分别评测：
-
-- Skill 选择：意图是否映射到正确 Skill，多意图时高风险 Skill 是否抢占。
-- Skill 执行：选中 Skill 后，槽位、Tool、确认、幂等、输出和人工降级是否正确。
-
-当前选择集 16/16、执行集 13/13；高风险 Skill 召回率 100%，越权 Tool 调用、未确认写操作和重复写入均为 0。安全指标使用“发生一次即阻断”，不被平均通过率掩盖。
-
-### 没有独立 Skill 层会造成什么问题
-
-- 场景规则散落在 Agent 节点或 Prompt 中，新增 Web、客服工作台等入口时需要复制流程。
-- Tool 权限、写操作确认和人工降级缺少统一执行点，容易出现不同入口行为不一致。
-- 场景能力不能独立版本化；修改退货流程时往往只能整体发布或回滚 Agent。
-- 端到端评测失败后，难以判断是选错能力，还是能力内部执行错误。
-- 业务方无法把某个场景作为独立资产进行复用、审计、灰度和验收。
-
-引入 Skill 层也有成本，需要维护 Manifest、Registry、版本兼容和专项评测。本项目接受这些成本，是因为它换来了场景能力的独立复用、权限收口、版本治理和可定位的质量指标。
-
-## 当前评测结果
-
-以下数据来自当前版本实际执行的核心、意图、记忆、Skill 与 RAG 专项评测，不是生产承诺。
-
-| 指标 | 当前结果 | POC/验收目标 | 状态 |
+| 指标 | 当前结果 | 门禁目标 | 状态 |
 | --- | ---: | ---: | --- |
-| 核心场景通过率 | 58/58，100% | ≥ 85% | 达标 |
-| 规则引用有效率 | 100% | ≥ 90% | 达标 |
-| 高风险转人工覆盖率 | 100% | ≥ 95% | 达标 |
-| Tool 成功率 | 100% | ≥ 95% | 达标 |
-| 本地 TestClient P95 | 约 97.41ms | ≤ 10 秒 | 达标 |
-| 意图目录固定集 | 60/60，100% | ≥ 95% | 达标 |
-| 高风险意图召回率 | 100% | 100% | 达标 |
-| 短期状态场景通过率 | 12/12，100% | 100% | 达标 |
-| 跨用户/陈旧状态误用率 | 0% / 0% | 0% / 0% | 达标 |
-| Skill 选择准确率 | 16/16，100% | ≥ 95% | 达标 |
-| Skill 执行场景通过率 | 13/13，100% | ≥ 95% | 达标 |
-| 越权 Tool / 未确认写 / 重复写 | 0 / 0 / 0 | 0 / 0 / 0 | 达标 |
+| 核心场景通过率 | 58/58，100% | ≥ 85% | ✅ |
+| 高风险转人工覆盖率 | 100% | ≥ 95% | ✅ |
+| 意图目录固定集 | 60/60，100% | ≥ 95% | ✅ |
+| 高风险意图召回率 | 100% | 100% | ✅ |
+| 短期状态场景通过率 | 12/12，100% | 100% | ✅ |
+| 跨用户/陈旧状态误用率 | 0% / 0% | 0% / 0% | ✅ |
+| Skill 选择准确率 | 16/16，100% | ≥ 95% | ✅ |
+| Skill 执行场景通过率 | 13/13，100% | ≥ 95% | ✅ |
+| 越权 Tool / 未确认写 / 重复写 | 0 / 0 / 0 | 0 / 0 / 0 | ✅ |
+| RAG 回归集 | 100% | ≥ 90% | ✅ |
+| RAG 挑战集 | 76.67% | 报告指标 | 📊 |
 
-两项 P0 专项门禁也已执行：Intent Catalog 固定集 60/60，主意图准确率 100%、高风险召回率 100%、多意图次意图召回率 100%；短期状态场景 12/12，跨用户泄漏率 0%、陈旧槽位误用率 0%、订单纠正准确率 100%。前者验证当前确定性安全路由和目录边界，不代表 DeepSeek 等真实模型在生产流量上的分类效果；后者验证结构化状态契约，不代表生产数据库的容量与并发能力。
+> 以上数据来自匿名模拟数据和本地演示环境，不代表客户生产收益。
 
-当前固定评测已覆盖支付敏感独立路由、中文多轮追问、中文口语/错别字、跨用户越权、重复写入和知识无依据场景，58/58 通过。该结果仅代表匿名模拟数据和本地演示环境，不代表客户生产收益。
+更多评测细节见 [Evaluation & Badcase](docs/evaluation-and-badcase.md) 和 [POC Acceptance Report](docs/poc-acceptance-report.md)。
 
-RAG 专项评测另有 100 条样本：开发集 30 条、固定回归集 40 条、挑战集 30 条。当前本地 `fusion` 在开发集和回归集为 100%，挑战集为 76.67%；挑战集的失败被保留，用于呈现当前小语料和确定性 Provider 的真实泛化边界，不把它反向调成“又一个开发集”。
+---
 
-下面保留了评测方案背后的产品判断，便于面试追问或方案评审；首次浏览可以先跳到[评测与 Badcase 质量闭环](#评测与-badcase-质量闭环)。
+## Reliability / Failure Handling
 
-<details>
-<summary><strong>展开：为什么做检索消融、三套数据集、意图治理、短期记忆和价值指标</strong></summary>
+### Integration Layer
 
-### 为什么要做检索消融
+所有外部调用经过 `IntegrationAdapter`，提供：
 
-同一批数据分别运行 `lexical-only`、`vector-only`、`fusion`、`fusion+rerank`，目的是回答每个组件解决了什么问题、收益是否覆盖成本。正确文档没进 Top5 是召回问题，进了 Top5 但没到 Top1 是排序问题，Top1 正确但证据不足则是可回答性问题；不拆开就只能笼统地说“RAG 效果不好”，也无法判断该换 embedding、调融合、加 reranker，还是加强拒答门禁。
+| 能力 | 说明 |
+| --- | --- |
+| **Timeout** | 默认 3 秒，超时后映射为 `EXTERNAL_TIMEOUT` |
+| **Retry** | 只读操作自动重试（指数退避）；写操作不重试（靠幂等键） |
+| **Circuit Breaker** | CLOSED → OPEN（连续 5 次失败）→ HALF_OPEN → CLOSED |
+| **Error Mapping** | 原始异常映射为标准 `IntegrationError`，不泄露给 Agent |
+| **Fault Injection** | 确定性故障注入，通过环境变量配置，默认关闭 |
 
-当前结果也说明消融不是为了证明技术越多越好：在仅两条当前有效规则的小语料中，lexical 和 fusion 的回归集都为 100%，确定性 vector-only 为 75.00%，加入测试 lexical reranker 后为 97.50%，反而出现负收益。因此本地默认保留 `fusion`，真实 reranker 的准确率收益、P95 和调用成本达到验收标准后才进入生产默认链路。
-
-### 为什么需要三套数据集
-
-- 开发集允许反复查看和调参数，作用是定位问题，不能用来证明泛化。
-- 固定回归集保存核心业务契约与历史 badcase，作用是阻止新版本把已经正确的能力改坏。
-- 挑战集在验收阶段检查未针对性调优的口语、噪声、错误前提和同领域无答案问题；一旦根据它调参，它就已经泄漏，必须降级为开发数据并补充新挑战样本。
-
-如果三者混用，同一批题既指导关键词、阈值和 Prompt，又用于宣称 100%，得到的是对测试题的适配程度，不是对真实用户问题的预测能力。
-
-### 为什么意图识别需要目录、混淆矩阵和风险优先级
-
-可以把这三项能力理解成：先统一业务规则，再检查系统容易错在哪里，最后规定多个诉求同时出现时先处理哪个。
-
-| 机制 | 解决的问题 | 本项目中的做法 |
-| --- | --- | --- |
-| 意图目录 | 系统有哪些意图，每个意图能做什么、不能做什么 | 集中记录物流、退货、投诉等意图的定义、负责人、正反例、风险等级、必需信息和允许调用的 Tool |
-| 混淆矩阵 | 系统经常把哪类问题错分成哪类 | 分别统计“投诉错成物流”“物流错成投诉”等错误，而不只看一个总体准确率 |
-| 风险优先级 | 一句话包含多个诉求时，哪个诉求决定当前动作 | 支付敏感和投诉优先于物流、退货等普通咨询，先停止自动处理并转人工 |
-
-如果只在 Prompt 里列出几个意图，新增或修改意图时，还要分别修改代码路由、Tool 权限和测试，很容易出现各处定义不一致。例如 Prompt 已经增加“支付敏感”，但 Tool 权限没有更新，系统仍可能继续执行不该执行的业务操作。Intent Catalog 把这些规则统一放在一个带版本号的配置中，出了问题可以追溯“当时使用哪一版规则，为什么这样分类和调用 Tool”。
-
-混淆矩阵的价值是区分错误的方向，因为不同错误的业务后果不同：把物流问题错分成投诉，通常只是多转一次人工；把投诉错分成物流，却可能漏掉高风险问题。因此项目除了要求整体准确率达到 95%，还单独要求固定评测集中的高风险意图召回率达到 100%，防止总体平均分掩盖严重错误。
-
-用户也可能在一句话中提出多个诉求。例如“包裹没到，我要投诉”同时包含物流和投诉。本项目将投诉设为主意图，决定当前先转人工；物流作为次意图写入客服摘要，让人工知道投诉的具体原因。这样既不会为了查物流而忽略投诉，也不会因为只保留“投诉”标签而丢失用户的实际问题。
-
-最后，系统在真正执行 Tool 前还会再检查一次权限。例如物流意图只能查询物流，不能提交退货申请。这样即使分类、Prompt 或代码路由发生错误，也能在业务操作前停止执行，避免一次识别错误直接变成错误操作。
-
-### 为什么短期记忆不是“保存更多聊天”
-
-售后多轮真正需要复用的是订单号、退货原因、上一意图和少量 Tool 已验证事实，而不是整段聊天。系统为每个状态记录来源、置信度、会话/订单作用域与过期时间：订单绑定默认 24 小时，上一意图 30 分钟，退货原因 60 分钟，物流/退货事实 5/15 分钟；用户显式输入高于继承状态，切换订单立即清除旧订单作用域的数据。实时回答仍重新调用受控 Tool，不把缓存事实当作永久真相。
-
-不做这种治理有两种代价：完全无状态会让用户每轮重复订单号，降低完成率；直接保存全文或摘要则无法证明值从哪里来、是否仍有效、属于哪个订单，容易出现旧物流状态复用、退货原因串单和跨用户泄漏。TTL 也不能只设一个值：放长会增加陈旧事实风险，过短则增加追问和 Tool 调用，需要按业务变化速度分别校准。
-
-### 指标如何服务于客户价值
-
-客服主管视角的质量看板第一期将指标解释为可行动的业务信号：服务会话数反映使用量；业务核实成功率反映订单、物流或规则信息是否成功获取；转人工率反映人工资源压力；知识依据覆盖率反映规则回答是否有有效版本和引用。看板同时展示最近质量趋势、问题类型分布、风险原因排行和风险事件，帮助主管判断“是否稳定、哪里出问题、下一步处理什么”。当前演示数据为进程内事件，缺少样本时显示暂无数据，不代表生产收益。
-
-当前 POC 主要验证产品质量，不足以证明真实业务收益。上线试点前，应使用客户最近 4 周数据建立基线，并分三层观察：
-
-| 层级 | 指标示例 | 当前能否证明 |
-| --- | --- | --- |
-| 产品质量 | 事实准确率、引用有效率、风险转人工覆盖率、Tool 错误率、重复建单率 | 可以用固定评测集初步验证 |
-| 用户体验 | 首次有效回复时延、一次解决率、转人工等待时间、补充信息次数 | 只能在演示环境部分观察 |
-| 业务价值 | 自动解决率、平均处理时长、单会话人工成本、投诉/退款风险损失 | 需要客户生产基线和灰度数据 |
-
-建议的收益测算口径：
-
-```text
-月度节省人工成本
-= 月均售后会话数 × 自动解决率提升幅度 × 单次人工处理成本
-
-月度释放人工工时
-= 减少的人工介入会话数 × 单次平均处理时长
-
-风险损失避免额
-= 高风险问题量 × 漏接率下降幅度 × 单次客诉/退款争议成本
-```
-
-这些公式用于试点设计，不把小规模 POC 评测结果直接外推为客户 ROI。
-
-</details>
-
-## 评测与 Badcase 质量闭环
-
-评测集和 badcase 是这个项目最重要的交付资产之一。它们不是为了证明“模型答得像不像”，而是为了验证一条完整的业务契约：意图是否正确、是否调用正确 Tool、事实是否来自受控数据、规则是否有有效引用、风险问题是否转人工、写操作是否经过确认，以及失败时是否可解释、可恢复。
-
-当前评测集按正常主流程、业务边界、Tool 异常、风险与转人工、知识无依据五类组织，共 58 条；每条用例记录输入、前置数据、预期意图、允许 Tool、预期事实、引用要求、转人工要求、HTTP 状态和用户可见文案。当前范围优先覆盖中文口语、错别字/省略表达、多轮追问、越权和重复写入，英文样本暂不纳入。
-
-多轮会话当前支持：通过 `session_id` 继承仍有效的结构化状态；首轮缺少退货原因时，下一轮可补充原因；物流查询后可追问预计到达时间；显式切换订单会清除旧订单状态；同一会话连续两次未解决时自动转人工。会话上下文已使用 SQLite 持久化并按用户隔离；生产环境仍需补充租户隔离、正式 Schema 迁移、备份、脱敏和并发治理。
-
-Badcase 则采用“发现 → 脱敏 → 定义预期 → 根因归类 → 修复 → 加入回归 → 记录版本”的流程。目前 `evals/badcases.jsonl` 已记录中文检索、错误路由、Tool 失败降级、业务文案和自然语言参数解析等问题。高风险漏接、重复写入、无依据回答和越权读取应作为发布阻断项，不能被整体平均通过率掩盖。
-
-评测集字段设计、覆盖矩阵、数据集划分、通过标准和 badcase 生命周期见 [`docs/evaluation-and-badcase.md`](docs/evaluation-and-badcase.md)。
-
-## 快速开始
-
-### 1. 安装依赖
+### Failure Demo
 
 ```bash
+# 演示 OMS 超时 → 重试 → 失败 → 转人工
+export MOCK_OMS_LATENCY_MS=3000
+export MOCK_OMS_FAILURE_RATE=0.5
+make dev
+
+# 另一个终端
+curl -X POST http://127.0.0.1:8000/assist \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-Id: user-demo-001' \
+  -d '{"message":"订单到哪里了？","order_id":"OD202608001"}'
+# → success: false, error_code: 503_EXTERNAL_UNAVAILABLE, handoff: true
+```
+
+---
+
+## Quick Start
+
+```bash
+# 1. 安装依赖
 python3 -m pip install -r requirements.txt
+
+# 2. 启动 API
+make dev          # 或: python3 -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
+
+# 3. 启动前端（另开终端）
+make web          # 或: python3 -m http.server 8080 --bind 127.0.0.1 --directory apps/web
+
+# 4. 打开 http://127.0.0.1:8080
 ```
 
-### 2. 启动 API
-
-```bash
-python3 -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
-```
-
-健康检查：<http://127.0.0.1:8000/health>
-
-### 3. 启动前端
-
-另开一个终端，在项目根目录执行：
-
-```bash
-python3 -m http.server 8080 --bind 127.0.0.1 --directory apps/web
-```
-
-打开 <http://127.0.0.1:8080>。
-
-### 4. Docker Compose
+### Docker Compose
 
 ```bash
 docker compose -f deploy/docker-compose.yml up --build
 ```
 
-当前环境尚未完成 Docker 容器网络的独立采样；具备 Docker CLI 后，应补充 Compose 启动、健康检查和容器网络 P95 验证。
+### 统一命令
 
-## DeepSeek 配置
+| 命令 | 说明 |
+| --- | --- |
+| `make dev` | 启动 API 开发服务器 |
+| `make web` | 启动前端静态服务器 |
+| `make test` | 运行全部测试 |
+| `make eval` | 运行全部评测 |
+| `make verify` | 测试 + 评测 + 构建验证（发布前检查） |
 
-DeepSeek 是可选的意图分类依赖。模型调用失败或未启用时，系统回退到本地意图路由。
+### DeepSeek 配置（可选）
 
 ```bash
 export DEEPSEEK_API_KEY="你的密钥"
 export DEEPSEEK_ENABLED=true
-python3 -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
 ```
 
-如需关闭模型调用：
+模型调用失败或未启用时，系统回退到确定性本地路由。
 
-```bash
-export DEEPSEEK_ENABLED=false
-```
+---
 
-不要提交 `.env`、API Key 或包含密钥的日志。
+## Production Gaps
 
-## API 示例
-
-### 物流查询
-
-```bash
-curl -X POST http://127.0.0.1:8000/tools/query-order-logistics \
-  -H 'Content-Type: application/json' \
-  -H 'X-User-Id: user-demo-001' \
-  -d '{"order_id":"OD202608001"}'
-```
-
-### 统一对话入口
-
-```bash
-curl -X POST http://127.0.0.1:8000/assist \
-  -H 'Content-Type: application/json' \
-  -H 'X-User-Id: user-demo-001' \
-  -d '{"message":"订单到哪里了？","order_id":"OD202608001","session_id":"demo-session-001"}'
-```
-
-完整输入、输出、权限和错误契约见 [`docs/api-contracts.md`](docs/api-contracts.md)。
-
-### 链路回放与性能分析
-
-```bash
-# trace_id 可从 /assist 响应体或 X-Trace-Id 响应头取得
-curl -s http://127.0.0.1:8000/admin/traces/<trace_id> \
-  -H 'X-Role: supervisor'
-
-curl -s 'http://127.0.0.1:8000/admin/observability/summary?window_minutes=60' \
-  -H 'X-Role: supervisor'
-```
-
-前者还原 HTTP → LangGraph → Skill → Model/RAG/Tool 父子链并标出具体失败操作；后者返回请求量、错误码、端到端及各操作 P50/P95、最慢链路和最近失败链路。本地数据默认保存在 `runtime/observability.db`，运行日志为单行 JSON；详细排障步骤见 [`docs/deployment-runbook.md`](docs/deployment-runbook.md)。
-
-## 测试与验收
-
-```bash
-python3 -m pytest -q
-python3 evals/validate_dataset.py
-python3 evals/run_intent_eval.py
-python3 evals/run_memory_eval.py
-python3 evals/run_skill_eval.py
-python3 evals/run_policy_eval.py
-python3 evals/run_eval.py
-```
-
-固定评测集覆盖正常路径、业务边界、Tool 异常、风险转人工、规则无依据、支付敏感独立分类、中文多轮追问、退货写操作和业务文案契约。交付前还应补做 Docker Compose 和容器网络验证。
-
-`evals/run_eval.py` 会在导入应用前创建独立临时 SQLite 数据库并关闭外部意图模型，固定评测不会读取或修改 `runtime/` 中的演示工单、退货申请和会话状态。
-
-## 项目结构
-
-```text
-apps/api/                 # FastAPI、编排入口、受控 Tool 和服务
-apps/api/agent/graph.py  # LangGraph 状态、节点、条件路由和依赖注入
-apps/api/services/intent_catalog.py # 版本化意图资产、风险优先级和 Tool 权限
-apps/api/skills/          # Skill Contract、Registry、Executor 与场景 Handler
-config/skills/            # 四个版本化 Skill Manifest
-apps/api/support/conversations.py # 带来源、作用域和 TTL 的短期业务状态
-apps/api/support/observability.py  # 本地 Trace/Span、JSON 日志和窗口聚合
-apps/web/index.html       # 无构建静态工作台
-data/mock/                # 匿名订单、物流和演示数据
-knowledge/                # 版本化规则和知识数据
-evals/                    # 固定评测集、校验和评测脚本
-evals/badcases.jsonl      # badcase、根因、修复和回归记录
-evals/run_policy_eval.py  # RAG 召回、重排、拒答和知识更新评测
-evals/policy-report.json  # 最近一次 RAG 专项评测结果
-evals/rag/                # 开发、固定回归、挑战三套 RAG 数据集
-evals/run_intent_eval.py  # 意图混淆矩阵、高风险和多意图发布门禁
-evals/run_memory_eval.py  # 继承、过期、纠正和隔离状态门禁
-evals/run_skill_eval.py   # Skill 选择与执行两层发布门禁
-tests/                    # API、业务状态、权限和前端回归测试
-docs/api-contracts.md     # API 与 Tool 契约
-docs/solution-design.md   # 解决方案设计和数据流
-docs/deployment-runbook.md# 启动、配置、排障和回滚
-SPEC.md                   # 需求、边界和验收标准
-```
-
-## 已知限制与生产化方向
-
-| 领域 | 当前 POC | 生产化缺口 |
+| Capability | POC | Production Recommendation |
 | --- | --- | --- |
-| 身份与数据 | 模拟角色、匿名订单和本地权限校验 | 真实认证、客户系统身份映射、多租户隔离和字段脱敏 |
-| 业务集成 | 模拟 OMS、物流、退货和工单 | 真实系统连接、超时重试、熔断、审计和紧急禁用 |
-| 状态存储 | 会话、工单、申请和事件使用 SQLite，服务重启后可恢复 | 正式 Schema 迁移、备份、过期清理、并发治理和可靠事件流 |
-| Agent 编排 | LangGraph 负责受控节点编排，业务状态由现有存储维护 | 分布式执行、依赖故障治理和跨服务状态一致性 |
-| Intent / Skill 治理 | Catalog 和 Manifest 为仓库内版本化 JSON | 运营后台、审批发布、灰度、依赖解析、跨服务分发和按版本回滚 |
-| 可观测性 | 本地 Trace/Span、JSON 日志和时间窗口聚合 | 跨服务传播、采样、保留策略、外部告警和生产并发治理 |
-| RAG | 内存线性扫描、确定性测试 Provider 和生产 Provider 接口 | 持久化向量索引、增量入库、真实模型基线、知识原子发布与回滚 |
-| 业务价值 | 固定评测集和本地性能结果 | 客户生产基线、灰度流量、用户体验指标和 ROI 验证 |
+| **Auth** | 模拟 `X-User-Id` Header | JWT + 多租户 + 客户身份系统 |
+| **External System** | Mock JSON + IntegrationAdapter | 客户 OMS/物流/工单 API + 审计 |
+| **Observability** | 本地 SQLite TraceStore | OpenTelemetry Collector + Jaeger |
+| **Persistence** | SQLite 单文件 | 生产数据库 + 迁移 + 备份 + 并发治理 |
+| **Deployment** | Docker Compose 单机 | 云负载均衡 + WAF + 多实例 |
+| **HA** | 单进程 | 多实例 + 健康检查 + 自动恢复 |
+| **RAG** | 内存线性扫描 + 确定性 Provider | 向量索引 + 生产 embedding + reranker |
+| **Skill 治理** | 仓库内 JSON | 远程注册中心 + 审批 + 灰度 + 回滚 |
 
-因此，本地固定集和回归集结果只能证明当前模拟数据上的业务契约，不能直接表述为生产 RAG 效果或客户收益。
+> 本项目是 Production-oriented POC，不声称 Production Ready、High Availability 或 Enterprise Grade。
 
-生产化前至少需要：
+---
 
-1. 接入客户认证、授权和租户级数据隔离。
-2. 将当前 SQLite 状态存储升级为带迁移、备份和并发治理的生产数据库，并将事件接入可靠事件流。
-3. 对 OMS、物流、退款和知识库接入设置超时、重试、熔断、审计和告警。
-4. 增加客服分配、实时指标、灰度发布、回滚和写操作紧急禁用能力。
-5. 为混合 RAG 接入生产 embedding、向量索引和 Cross-Encoder/model reranker，建立索引版本、知识版本发布和回滚流程。
-6. 将静态 POC 前端升级为可维护的前端工程，并补充浏览器级 E2E 测试。
-7. 为 Skill Manifest 增加审批、兼容性校验、依赖解析、灰度路由和按版本回滚能力。
+## Documentation
 
-## 相关文档
+| 文档 | 说明 |
+| --- | --- |
+| [SPEC.md](SPEC.md) | 需求范围、状态流转、权限和验收标准 |
+| [Customer Discovery](docs/customer-discovery.md) | 客户假设、调研问题和范围 |
+| [Solution Design](docs/solution-design.md) | 架构、信任边界、部署架构、退货时序 |
+| [API Contracts](docs/api-contracts.md) | API、Tool、错误和权限契约 |
+| [Evaluation & Badcase](docs/evaluation-and-badcase.md) | 评测集设计、通过标准和 badcase 管理 |
+| [POC Acceptance Report](docs/poc-acceptance-report.md) | 当前评测结果和验收结论 |
+| [Deployment Runbook](docs/deployment-runbook.md) | 启动、配置、排障和回滚 |
+| [Delivery Playbook](docs/delivery-playbook.md) | FDE 交付方法论（Discovery → Production） |
+| [ADR](docs/adr/) | 重要技术决策记录 |
 
-- [`SPEC.md`](SPEC.md)：需求范围、状态流转、权限和验收标准。
-- [`docs/customer-discovery.md`](docs/customer-discovery.md)：客户假设、调研问题和范围。
-- [`docs/solution-design.md`](docs/solution-design.md)：整体解决方案设计和产品取舍。
-- [`docs/api-contracts.md`](docs/api-contracts.md)：API、Tool、错误和权限契约。
-- [`docs/deployment-runbook.md`](docs/deployment-runbook.md)：启动、配置、排障和回滚。
-- [`docs/poc-acceptance-report.md`](docs/poc-acceptance-report.md)：当前固定评测和验收结论。
-- [`docs/evaluation-and-badcase.md`](docs/evaluation-and-badcase.md)：评测集设计、通过标准和 badcase 管理方法。
-- [`docs/adr/0005-scenario-skills-between-agent-and-tools.md`](docs/adr/0005-scenario-skills-between-agent-and-tools.md)：为什么需要独立场景 Skill 层及其取舍。
+---
+
+## License
+
+[MIT](LICENSE)

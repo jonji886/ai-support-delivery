@@ -5,18 +5,27 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from apps.api.support.errors import IntegrationError
+from apps.api.support.integration import IntegrationAdapter, map_to_tool_error_code
 from apps.api.support.responses import ToolResponse
 
 logger = logging.getLogger("ai_support_delivery.tool")
 
 
 class ReturnApplicationService:
-    def __init__(self, orders: Dict[str, Dict[str, Any]], db_path: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        orders: Dict[str, Dict[str, Any]],
+        db_path: Optional[str] = None,
+        *,
+        adapter: Optional[IntegrationAdapter] = None,
+    ) -> None:
         self.orders = orders
         self.db_path = db_path or os.getenv("SUPPORT_DB_PATH", "runtime/support.db")
         if self.db_path != ":memory:":
             os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
         self._initialize()
+        self.adapter = adapter or IntegrationAdapter(system="ticket", max_retries=0)
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)
@@ -53,38 +62,47 @@ class ReturnApplicationService:
         return f"RA202608{int(row['count']) + 1:04d}"
 
     def submit(self, order_id: str, user_id: str, reason: str, key: str, trace_id: str) -> ToolResponse:
-        order = self.orders.get(order_id)
-        if order is None:
-            return ToolResponse.failure(trace_id, "404_ORDER_NOT_FOUND", "未找到该订单，无法提交退货申请。", 404)
-        if order["anonymous_user_id"] != user_id:
-            return ToolResponse.failure(trace_id, "403_ORDER_FORBIDDEN", "无权为该订单提交退货申请。", 403)
-        with self._connect() as connection:
-            existing = connection.execute("SELECT * FROM return_applications WHERE idempotency_key = ?", (key,)).fetchone()
-            if existing:
-                if existing["user_id"] != user_id:
-                    return ToolResponse.failure(trace_id, "409_IDEMPOTENCY_KEY_CONFLICT", "幂等键已被其他用户使用，不能复用。", 409)
-                return ToolResponse.success_result(self._row(existing), trace_id, "已返回同一请求创建的退货申请。")
-            application_id = self._next_id(connection)
-        application = {
-            "application_id": application_id,
-            "order_id": order_id,
-            "reason": reason,
-            "status": "待审核",
-            "next_steps": ["等待客服审核退货申请。", "审核通过后按指引寄回商品。", "寄回后可在售后渠道查看处理进度。"],
-            "notice": "退货申请已提交不代表退款已完成，最终结果以人工审核为准。",
-            "submitted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "user_id": user_id,
-        }
-        with self._connect() as connection:
-            connection.execute(
-                """INSERT INTO return_applications
-                (application_id, idempotency_key, user_id, order_id, reason, status, next_steps, notice, submitted_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (application_id, key, user_id, order_id, reason, application["status"], json.dumps(application["next_steps"], ensure_ascii=False), application["notice"], application["submitted_at"]),
-            )
-            application = self._row(connection.execute("SELECT * FROM return_applications WHERE application_id = ?", (application_id,)).fetchone())
-        logger.info("tool_call", extra={"event": "tool_call", "tool_name": "submit_return_application", "trace_id": trace_id, "success": True, "error_code": None})
-        return ToolResponse.success_result(application, trace_id, "退货申请已提交，当前状态为待审核。")
+        def _do_submit() -> ToolResponse:
+            order = self.orders.get(order_id)
+            if order is None:
+                return ToolResponse.failure(trace_id, "404_ORDER_NOT_FOUND", "未找到该订单，无法提交退货申请。", 404)
+            if order["anonymous_user_id"] != user_id:
+                return ToolResponse.failure(trace_id, "403_ORDER_FORBIDDEN", "无权为该订单提交退货申请。", 403)
+            with self._connect() as connection:
+                existing = connection.execute("SELECT * FROM return_applications WHERE idempotency_key = ?", (key,)).fetchone()
+                if existing:
+                    if existing["user_id"] != user_id:
+                        return ToolResponse.failure(trace_id, "409_IDEMPOTENCY_KEY_CONFLICT", "幂等键已被其他用户使用，不能复用。", 409)
+                    return ToolResponse.success_result(self._row(existing), trace_id, "已返回同一请求创建的退货申请。")
+                application_id = self._next_id(connection)
+            application = {
+                "application_id": application_id,
+                "order_id": order_id,
+                "reason": reason,
+                "status": "待审核",
+                "next_steps": ["等待客服审核退货申请。", "审核通过后按指引寄回商品。", "寄回后可在售后渠道查看处理进度。"],
+                "notice": "退货申请已提交不代表退款已完成，最终结果以人工审核为准。",
+                "submitted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "user_id": user_id,
+            }
+            with self._connect() as connection:
+                connection.execute(
+                    """INSERT INTO return_applications
+                    (application_id, idempotency_key, user_id, order_id, reason, status, next_steps, notice, submitted_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (application_id, key, user_id, order_id, reason, application["status"], json.dumps(application["next_steps"], ensure_ascii=False), application["notice"], application["submitted_at"]),
+                )
+                application = self._row(connection.execute("SELECT * FROM return_applications WHERE application_id = ?", (application_id,)).fetchone())
+            logger.info("tool_call", extra={"event": "tool_call", "tool_name": "submit_return_application", "trace_id": trace_id, "success": True, "error_code": None})
+            return ToolResponse.success_result(application, trace_id, "退货申请已提交，当前状态为待审核。")
+
+        try:
+            # Write operations are not retried automatically; idempotency key
+            # protects against duplicate submission if the caller retries.
+            return self.adapter.call(_do_submit, read_only=False)
+        except IntegrationError as exc:
+            code, status, handoff = map_to_tool_error_code(exc)
+            return ToolResponse.failure(trace_id, code, str(exc), status, handoff=handoff)
 
     def pending(
         self,

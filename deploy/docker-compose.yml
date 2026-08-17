@@ -22,6 +22,11 @@ services:
       INTENT_SLOT_TTL_MINUTES: ${INTENT_SLOT_TTL_MINUTES:-30}
       LOGISTICS_FACT_TTL_MINUTES: ${LOGISTICS_FACT_TTL_MINUTES:-5}
       RETURN_FACT_TTL_MINUTES: ${RETURN_FACT_TTL_MINUTES:-15}
+      # Fault injection (disabled by default)
+      MOCK_OMS_LATENCY_MS: ${MOCK_OMS_LATENCY_MS:-0}
+      MOCK_OMS_FAILURE_RATE: ${MOCK_OMS_FAILURE_RATE:-0}
+      MOCK_TICKET_LATENCY_MS: ${MOCK_TICKET_LATENCY_MS:-0}
+      MOCK_TICKET_FAILURE_RATE: ${MOCK_TICKET_FAILURE_RATE:-0}
     volumes:
       - runtime-data:/app/runtime
     restart: unless-stopped

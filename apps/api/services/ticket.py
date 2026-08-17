@@ -5,17 +5,25 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from apps.api.support.errors import IntegrationError
+from apps.api.support.integration import IntegrationAdapter, map_to_tool_error_code
 from apps.api.support.responses import ToolResponse
 
 logger = logging.getLogger("ai_support_delivery.tool")
 
 
 class TicketService:
-    def __init__(self, db_path: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        *,
+        adapter: Optional[IntegrationAdapter] = None,
+    ) -> None:
         self.db_path = db_path or os.getenv("SUPPORT_DB_PATH", "runtime/support.db")
         if self.db_path != ":memory:":
             os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
         self._initialize()
+        self.adapter = adapter or IntegrationAdapter(system="ticket", max_retries=0)
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)
@@ -49,23 +57,32 @@ class TicketService:
         return f"TK202608{int(row['count']) + 1:04d}"
 
     def create(self, summary: str, category: str, priority: str, order_id: Optional[str], key: str, trace_id: str, user_id: Optional[str] = None) -> ToolResponse:
-        created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        with self._connect() as connection:
-            existing = connection.execute("SELECT * FROM tickets WHERE idempotency_key = ?", (key,)).fetchone()
-            if existing:
-                if existing["user_id"] != user_id:
-                    return ToolResponse.failure(trace_id, "409_IDEMPOTENCY_KEY_CONFLICT", "幂等键已被其他用户使用，不能复用。", 409)
-                return ToolResponse.success_result(self._row(existing), trace_id, "已返回同一幂等请求创建的工单。")
-            ticket_id = self._next_id(connection)
-            connection.execute(
-                """INSERT INTO tickets
-                (ticket_id, idempotency_key, user_id, order_id, category, priority, summary, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (ticket_id, key, user_id, order_id, category, priority, summary, "待人工处理", created_at),
-            )
-            ticket = self._row(connection.execute("SELECT * FROM tickets WHERE ticket_id = ?", (ticket_id,)).fetchone())
-        logger.info("tool_call", extra={"event": "tool_call", "tool_name": "create_service_ticket", "trace_id": trace_id, "ticket_id": ticket_id, "success": True, "error_code": None})
-        return ToolResponse.success_result(ticket, trace_id, "已创建售后工单。")
+        def _do_create() -> ToolResponse:
+            created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            with self._connect() as connection:
+                existing = connection.execute("SELECT * FROM tickets WHERE idempotency_key = ?", (key,)).fetchone()
+                if existing:
+                    if existing["user_id"] != user_id:
+                        return ToolResponse.failure(trace_id, "409_IDEMPOTENCY_KEY_CONFLICT", "幂等键已被其他用户使用，不能复用。", 409)
+                    return ToolResponse.success_result(self._row(existing), trace_id, "已返回同一幂等请求创建的工单。")
+                ticket_id = self._next_id(connection)
+                connection.execute(
+                    """INSERT INTO tickets
+                    (ticket_id, idempotency_key, user_id, order_id, category, priority, summary, status, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (ticket_id, key, user_id, order_id, category, priority, summary, "待人工处理", created_at),
+                )
+                ticket = self._row(connection.execute("SELECT * FROM tickets WHERE ticket_id = ?", (ticket_id,)).fetchone())
+            logger.info("tool_call", extra={"event": "tool_call", "tool_name": "create_service_ticket", "trace_id": trace_id, "ticket_id": ticket_id, "success": True, "error_code": None})
+            return ToolResponse.success_result(ticket, trace_id, "已创建售后工单。")
+
+        try:
+            # Write operations are not retried automatically; idempotency key
+            # protects against duplicate submission if the caller retries.
+            return self.adapter.call(_do_create, read_only=False)
+        except IntegrationError as exc:
+            code, status, handoff = map_to_tool_error_code(exc)
+            return ToolResponse.failure(trace_id, code, str(exc), status, handoff=handoff)
 
     def list_tickets(
         self,

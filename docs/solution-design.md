@@ -149,3 +149,159 @@ flowchart LR
 ```
 
 Span 只记录低基数技术属性，例如节点名、Tool 名、意图、候选数、引用数、Provider、状态和错误码；不记录原始问题、订单详情、令牌、地址或联系方式。完整 Trace/Span 默认保存在 `runtime/observability.db`，同时输出单行 JSON 运行日志。管理接口支持按 `trace_id` 回放，以及按窗口聚合请求/操作的失败率和 P50/P95；当前不包含外部采集器、分布式传播、告警推送、采样和自动数据保留，生产化时应迁移到 OpenTelemetry Collector 与后端存储，并保留当前操作命名和属性契约。
+
+## 部署架构
+
+部署架构展示从浏览器到外部业务系统的实际部署边界，并区分 POC 已实现、Mock 和生产推荐组件。
+
+```mermaid
+flowchart TB
+    subgraph Client["客户端"]
+        BR[Browser<br/>静态 Web 工作台]
+    end
+
+    subgraph Gateway["网关层"]
+        GW[Reverse Proxy<br/>Nginx Docker Compose]
+    end
+
+    subgraph App["应用层（POC 已实现）"]
+        FA[FastAPI<br/>请求校验 / 身份参数 / 错误响应]
+        LG[LangGraph Runtime<br/>状态图编排]
+        SR[Skill Runtime<br/>Registry / Executor / Handler]
+    end
+
+    subgraph Integration["集成层（POC 已实现）"]
+        IA[IntegrationAdapter<br/>timeout / retry / circuit breaker]
+        FI[FaultInjector<br/>确定性故障注入]
+    end
+
+    subgraph External["外部业务系统"]
+        OMS[OMS / 物流<br/>Mock 数据]
+        TS[工单系统<br/>SQLite POC]
+        KB[知识库<br/>版本化 JSON]
+        LLM[LLM Provider<br/>DeepSeek 可选]
+    end
+
+    subgraph Obs["可观测性（POC 已实现）"]
+        TS_DB[TraceStore<br/>SQLite]
+        ES[EventStore<br/>SQLite]
+        LOG[JSON 日志]
+    end
+
+    BR --> GW
+    GW --> FA
+    FA --> LG
+    LG --> SR
+    SR --> IA
+    IA --> OMS
+    IA --> TS
+    SR --> KB
+    LG --> LLM
+    FA -. HTTP Trace .-> TS_DB
+    LG -. 节点与 Skill 链路 .-> TS_DB
+    FA -. 业务事件 .-> ES
+    FA -. 运行日志 .-> LOG
+```
+
+| 组件 | 当前 POC 状态 | 生产推荐 |
+| --- | --- | --- |
+| Web 工作台 | 无构建静态 HTML | React/Next.js + 浏览器 E2E |
+| Reverse Proxy | Docker Compose Nginx | 云负载均衡 + WAF |
+| FastAPI | 本地模拟身份 | 客户认证 + JWT + 多租户 |
+| LangGraph | 单进程编排 | 分布式执行 + checkpointer |
+| Skill Runtime | 仓库内 JSON Manifest | 远程注册中心 + 审批 + 灰度 |
+| Integration Layer | 线程超时 + 内存熔断 | async + Redis 共享熔断状态 |
+| OMS / 物流 | 本地 JSON Mock | 客户 OMS API + 幂等 + 审计 |
+| 工单系统 | SQLite | 客户工单系统 + 事件流 |
+| 知识库 | 内存线性扫描 | 向量索引 + 增量入库 |
+| LLM Provider | 可选 DeepSeek | 客户批准的模型服务 |
+| TraceStore | SQLite 本地 | OpenTelemetry Collector + Jaeger |
+| EventStore | SQLite 本地 | 生产数据库 + 告警平台 |
+
+## 信任边界
+
+LLM 输出必须被视为不可信输入。LLM 不允许直接决定执行高风险业务操作；必须经过多层确定性校验。
+
+```mermaid
+flowchart TB
+    UI[用户输入] --> LLM[LLM / Agent<br/>意图理解与 Skill 选择]
+    LLM --> SP[Skill Policy<br/>白名单 Tool 校验]
+    SP --> TP[Tool Permission<br/>意图-Tool 权限再校验]
+    TP --> AUTH[Auth / Ownership<br/>用户身份与订单归属]
+    AUTH --> VAL[Validation<br/>参数格式与业务规则]
+    VAL --> CONF[Confirmation<br/>写操作必须用户确认]
+    CONF --> IDE[Idempotency<br/>幂等键防重复]
+    IDE --> AUD[Audit<br/>trace_id / 事件记录]
+    AUD --> BIZ[Business System<br/>执行原子操作]
+
+    LLM -. 不可信输出 .-> SP
+    SP -. 拒绝越权 .-> X1[停止执行]
+    TP -. 拒绝冲突 .-> X2[受控停止]
+    AUTH -. 拒绝越权 .-> X3[403]
+    CONF -. 未确认 .-> X4[409 等待确认]
+```
+
+| 信任边界 | 实现方式 | 当前状态 |
+| --- | --- | --- |
+| LLM 不可信 | 模型只分类意图，不生成订单事实/退货结论/规则引用 | ✅ 已实现 |
+| Skill 白名单 | `SkillToolGateway` 在执行前检查 `allowed_tools`/`forbidden_tools` | ✅ 已实现 |
+| Tool 权限再校验 | `finalize` 节点再次校验主意图是否允许当前 Tool | ✅ 已实现 |
+| 用户身份校验 | `X-User-Id` Header + 订单 `anonymous_user_id` 比对 | ✅ 已实现（模拟身份） |
+| 参数校验 | Pydantic 模型 + 正则 + 必填字段 | ✅ 已实现 |
+| 写操作确认 | `write_confirmation` Manifest + `confirmed` 参数 | ✅ 已实现 |
+| 幂等性 | `idempotency_key` 唯一索引 | ✅ 已实现 |
+| 审计 | `trace_id` + EventStore + ToolResponse | ✅ 已实现 |
+| JWT / 多租户 | — | ❌ 未实现（P1） |
+| 字段脱敏 | 日志脱敏已实现；Tool 返回最小字段 | ✅ 部分实现 |
+
+## 退货解决流程时序
+
+展示退货场景从用户提问到完成的多轮状态变化、写操作确认、Tool Calling 和 Human-in-the-loop。
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant A as Agent /assist
+    participant S as return_resolution Skill
+    participant T1 as check_return_eligibility
+    participant T2 as submit_return_application
+    participant H as 人工审核队列
+
+    U->>A: "我想退货（OD202608001）"
+    A->>S: 意图=return, 缺退货原因
+    S-->>A: needs_input (400_RETURN_FIELDS_REQUIRED)
+    A-->>U: "请补充退货原因"
+
+    U->>A: "尺码不合适"
+    A->>S: 意图=return, reason=尺码不合适
+    S->>T1: check_return_eligibility (只读)
+    T1-->>S: eligible=true, requires_human=false
+    S-->>A: completed, next=confirm_return_application
+    A-->>U: "符合退货条件，确认提交？"
+
+    U->>A: 点击"确认提交退货申请"
+    A->>S: phase=confirm_submit, confirmed=true
+    S->>T2: submit_return_application (写操作 + 幂等键)
+    T2-->>S: 申请单号 RA..., status=待审核
+    S-->>A: completed
+    A-->>U: "退货申请已提交，待审核"
+    Note over U,H: 申请进入人工审核队列
+
+    H->>H: 客服审核 → 审核通过/不通过
+    U->>A: 查询申请状态
+    A-->>U: 返回最新审核结果
+
+    alt 质量争议或超期
+        T1-->>S: requires_human=true
+        S-->>A: handoff
+        A-->>U: "需人工审核，已转人工"
+    end
+```
+
+关键设计点：
+
+1. **多轮状态**：首轮缺退货原因时返回 `needs_input`，下一轮继承上下文继续判断。
+2. **写操作确认**：资格判断是只读操作；只有用户明确点击确认后，才调用 `submit_return_application`。
+3. **幂等提交**：写操作使用 `idempotency_key` 防止重复申请。
+4. **人工接管**：质量争议或超期退货即使 Tool 调用成功，Skill 状态仍为 `handoff`。
+5. **完成条件**：申请状态为"待审核"不等于退款完成；最终结果由人工审核决定。

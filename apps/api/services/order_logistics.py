@@ -5,14 +5,28 @@ from pathlib import Path
 from typing import Any, Optional
 
 from apps.api.schemas import OrderLogisticsData
+from apps.api.support.errors import IntegrationError
+from apps.api.support.integration import IntegrationAdapter, map_to_tool_error_code
 from apps.api.support.responses import ToolResponse
 
 logger = logging.getLogger("ai_support_delivery.tool")
 
 
 class OrderLogisticsService:
-    def __init__(self, records: dict[str, dict[str, Any]]) -> None:
+    """Order/logistics query service backed by mock OMS data.
+
+    All read calls pass through :class:`IntegrationAdapter` to demonstrate
+    timeout, retry, circuit-breaker and error-mapping behavior.
+    """
+
+    def __init__(
+        self,
+        records: dict[str, dict[str, Any]],
+        *,
+        adapter: Optional[IntegrationAdapter] = None,
+    ) -> None:
         self.records = records
+        self.adapter = adapter or IntegrationAdapter(system="oms")
 
     @classmethod
     def from_default_data(cls) -> "OrderLogisticsService":
@@ -23,16 +37,25 @@ class OrderLogisticsService:
 
     def query(self, order_id: str, user_id: str, trace_id: str) -> ToolResponse:
         started_at = datetime.now().timestamp()
-        record = self.records.get(order_id)
-        if record is None:
-            return self._failure(trace_id, "404_ORDER_NOT_FOUND", "未找到该订单，无法确认物流状态。", started_at)
-        if record["anonymous_user_id"] != user_id:
-            return self._failure(trace_id, "403_ORDER_FORBIDDEN", "无权查询该订单。", started_at)
 
-        data = OrderLogisticsData.model_validate(record["logistics"])
-        result = ToolResponse.success_result(data.model_dump(mode="json"), trace_id, "已查询到最新物流状态。")
-        self._log(trace_id, order_id, True, None, started_at)
-        return result
+        def _do_query() -> ToolResponse:
+            record = self.records.get(order_id)
+            if record is None:
+                return self._failure(trace_id, "404_ORDER_NOT_FOUND", "未找到该订单，无法确认物流状态。", started_at)
+            if record["anonymous_user_id"] != user_id:
+                return self._failure(trace_id, "403_ORDER_FORBIDDEN", "无权查询该订单。", started_at)
+
+            data = OrderLogisticsData.model_validate(record["logistics"])
+            result = ToolResponse.success_result(data.model_dump(mode="json"), trace_id, "已查询到最新物流状态。")
+            self._log(trace_id, order_id, True, None, started_at)
+            return result
+
+        try:
+            return self.adapter.call(_do_query, read_only=True)
+        except IntegrationError as exc:
+            code, status, handoff = map_to_tool_error_code(exc)
+            self._log(trace_id, None, False, code, started_at)
+            return ToolResponse.failure(trace_id, code, str(exc), status, handoff=handoff)
 
     def _failure(self, trace_id: str, code: str, message: str, started_at: float) -> ToolResponse:
         # 只记录脱敏订单标识和结果，不记录用户身份或地址等敏感字段。

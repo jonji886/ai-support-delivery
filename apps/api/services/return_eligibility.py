@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from apps.api.schemas import ReturnEligibilityData
+from apps.api.support.errors import IntegrationError
+from apps.api.support.integration import IntegrationAdapter, map_to_tool_error_code
 from apps.api.support.responses import ToolResponse
 
 logger = logging.getLogger("ai_support_delivery.tool")
@@ -16,10 +18,13 @@ class ReturnEligibilityService:
         orders: dict[str, dict[str, Any]],
         policies: dict[str, dict[str, Any]],
         clock: Optional[Callable[[], datetime]] = None,
+        *,
+        adapter: Optional[IntegrationAdapter] = None,
     ) -> None:
         self.orders = orders
         self.policies = policies
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.adapter = adapter or IntegrationAdapter(system="oms")
 
     @classmethod
     def from_default_data(cls) -> "ReturnEligibilityService":
@@ -32,36 +37,44 @@ class ReturnEligibilityService:
 
     def check(self, order_id: str, user_id: str, reason: str, trace_id: str) -> ToolResponse:
         started_at = self.clock().timestamp()
-        order = self.orders.get(order_id)
-        if order is None:
-            return self._failure(trace_id, "404_ORDER_NOT_FOUND", "未找到该订单，无法判断退换货资格。", 404, started_at)
-        if order["anonymous_user_id"] != user_id:
-            return self._failure(trace_id, "403_ORDER_FORBIDDEN", "无权查询该订单。", 403, started_at)
-        if order.get("order_status") not in {"已签收", "已完成"} or not order.get("signed_at"):
-            return self._failure(trace_id, "409_ORDER_STATUS_UNSUPPORTED", "订单状态或签收信息异常，需要人工核实。", 409, started_at)
 
-        if self._is_high_risk_reason(reason):
-            return self._decision(
-                trace_id, order_id, False, "human_review", "当前原因涉及商品质量或争议，需要人工审核。",
-                ["请保留商品照片和相关凭证，等待人工客服审核。"], True, started_at,
-            )
+        def _do_check() -> ToolResponse:
+            order = self.orders.get(order_id)
+            if order is None:
+                return self._failure(trace_id, "404_ORDER_NOT_FOUND", "未找到该订单，无法判断退换货资格。", 404, started_at)
+            if order["anonymous_user_id"] != user_id:
+                return self._failure(trace_id, "403_ORDER_FORBIDDEN", "无权查询该订单。", 403, started_at)
+            if order.get("order_status") not in {"已签收", "已完成"} or not order.get("signed_at"):
+                return self._failure(trace_id, "409_ORDER_STATUS_UNSUPPORTED", "订单状态或签收信息异常，需要人工核实。", 409, started_at)
 
-        policy = self.policies.get(order.get("category"))
-        if policy is None:
-            return self._failure(trace_id, "424_POLICY_NOT_FOUND", "未找到适用的退换货规则，需要人工核实。", 424, started_at)
+            if self._is_high_risk_reason(reason):
+                return self._decision(
+                    trace_id, order_id, False, "human_review", "当前原因涉及商品质量或争议，需要人工审核。",
+                    ["请保留商品照片和相关凭证，等待人工客服审核。"], True, started_at,
+                )
 
-        signed_at = datetime.fromisoformat(order["signed_at"].replace("Z", "+00:00"))
-        days_since_signed = (self.clock() - signed_at).days
-        eligible = days_since_signed <= policy["return_window_days"]
-        if eligible:
-            basis = f"签收后第 {days_since_signed} 天，未超过 {policy['return_window_days']} 天退货期限。"
-            next_steps = ["在售后页面提交退货申请。", "保持商品及包装完好，并按页面指引寄回。"]
-            decision = "eligible"
-        else:
-            basis = f"签收后第 {days_since_signed} 天，已超过 {policy['return_window_days']} 天退货期限。"
-            next_steps = ["该情况需要人工客服核实是否存在特殊例外。"]
-            decision = "expired"
-        return self._decision(trace_id, order_id, eligible, decision, basis, next_steps, not eligible, started_at, policy["version"])
+            policy = self.policies.get(order.get("category"))
+            if policy is None:
+                return self._failure(trace_id, "424_POLICY_NOT_FOUND", "未找到适用的退换货规则，需要人工核实。", 424, started_at)
+
+            signed_at = datetime.fromisoformat(order["signed_at"].replace("Z", "+00:00"))
+            days_since_signed = (self.clock() - signed_at).days
+            eligible = days_since_signed <= policy["return_window_days"]
+            if eligible:
+                basis = f"签收后第 {days_since_signed} 天，未超过 {policy['return_window_days']} 天退货期限。"
+                next_steps = ["在售后页面提交退货申请。", "保持商品及包装完好，并按页面指引寄回。"]
+                decision = "eligible"
+            else:
+                basis = f"签收后第 {days_since_signed} 天，已超过 {policy['return_window_days']} 天退货期限。"
+                next_steps = ["该情况需要人工客服核实是否存在特殊例外。"]
+                decision = "expired"
+            return self._decision(trace_id, order_id, eligible, decision, basis, next_steps, not eligible, started_at, policy["version"])
+
+        try:
+            return self.adapter.call(_do_check, read_only=True)
+        except IntegrationError as exc:
+            code, status, handoff = map_to_tool_error_code(exc)
+            return ToolResponse.failure(trace_id, code, str(exc), status, handoff=handoff)
 
     @staticmethod
     def _is_high_risk_reason(reason: str) -> bool:
