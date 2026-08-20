@@ -196,7 +196,7 @@ python3 -m pytest -q
 
 `validate_dataset.py` 检查字段、意图集合、类别和最低数量；`run_eval.py` 执行固定用例，验证状态码、事实、引用、转人工和 Tool 调用，并生成 `evals/latest-report.json`。
 
-固定评测进程在导入应用前使用独立临时 SQLite 数据库，并强制关闭外部意图模型，避免历史演示状态、幂等记录或外部模型波动影响复现结果。
+固定评测进程在导入应用前使用独立临时 SQLite 数据库，并强制关闭外部意图模型，避免历史演示状态、幂等记录或外部模型波动影响复现结果。由于 `run_eval.py`、`run_skill_eval.py` 通过 HTTP 访问 Mock Customer Systems（`MOCK_CUSTOMER_SYSTEMS_BASE_URL`），这两个脚本会在导入应用前自动启动 mock 服务（`evals/_mock_boot.py`），保证 OMS / Logistics 调用可用且不依赖外部进程。
 
 当前评测脚本仍有两个可改进点：
 

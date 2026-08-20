@@ -19,6 +19,11 @@ os.environ["OBSERVABILITY_DB_PATH"] = str(Path(_eval_runtime.name) / "observabil
 os.environ["DEEPSEEK_ENABLED"] = "false"
 os.environ["LOG_LEVEL"] = "CRITICAL"
 
+# main.py 通过 HTTP Client 访问客户系统，必须先启动 mock 服务并设置其地址。
+from evals._mock_boot import boot_mock_customer_systems
+
+boot_mock_customer_systems()
+
 from fastapi.testclient import TestClient
 
 from apps.api.main import app, events as app_events

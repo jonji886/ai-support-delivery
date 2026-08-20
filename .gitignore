@@ -9,3 +9,11 @@ __pycache__/
 # runtime data
 runtime/*.db
 runtime/*.sqlite
+
+# Python 虚拟环境
+.venv/
+
+# 前端构建产物与依赖
+node_modules/
+dist/
+*.tsbuildinfo

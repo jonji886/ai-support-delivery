@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { assist, queryOrderLogistics, submitReturnApplication, getReturnApplication } from "../services/api";
-import type { Role, ToolResponse, Citation } from "../types/api";
+import type { Role, ToolResponse, Citation, ReturnEligibilityData } from "../types/api";
 import type { PageId } from "../App";
 
 interface ChatPageProps {
@@ -32,7 +32,7 @@ export function ChatPage({ role, userId, prefill, onNavigate }: ChatPageProps) {
     orderId: string;
     returnReason: string;
     idempotencyKey: string;
-    eligibilityData?: unknown;
+    eligibilityData?: ReturnEligibilityData;
   } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const prefillUsed = useRef(false);
@@ -116,7 +116,7 @@ export function ChatPage({ role, userId, prefill, onNavigate }: ChatPageProps) {
           orderId: action.order_id as string,
           returnReason: action.return_reason as string,
           idempotencyKey: action.idempotency_key as string,
-          eligibilityData: action.eligibility,
+          eligibilityData: action.eligibility as ReturnEligibilityData | undefined,
         });
       }
 
@@ -129,7 +129,7 @@ export function ChatPage({ role, userId, prefill, onNavigate }: ChatPageProps) {
         orderId: action.order_id as string,
         returnReason: action.return_reason as string,
         idempotencyKey: action.idempotency_key as string,
-        eligibilityData: action.eligibility,
+        eligibilityData: action.eligibility as ReturnEligibilityData | undefined,
       });
       // Also show AI message if present
       if (data.answer) {

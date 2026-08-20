@@ -52,8 +52,8 @@ jobs:
           python3 -c "
           import json
           report = json.load(open('evals/latest-report.json'))
-          passed = report.get('passed', 0)
-          total = report.get('total', 0)
+          passed = report.get('passed_cases', 0)
+          total = report.get('total_cases', 0)
           assert total > 0, 'no test cases found'
           rate = passed / total
           print(f'Core eval: {passed}/{total} = {rate:.2%}')
@@ -97,8 +97,8 @@ jobs:
           report = json.load(open('evals/skill-report.json'))
           selection = report.get('selection', {})
           execution = report.get('execution', {})
-          sel_rate = selection.get('passed', 0) / max(selection.get('total', 1), 1)
-          exe_rate = execution.get('passed', 0) / max(execution.get('total', 1), 1)
+          sel_rate = selection.get('passed_cases', 0) / max(selection.get('total_cases', 1), 1)
+          exe_rate = execution.get('passed_cases', 0) / max(execution.get('total_cases', 1), 1)
           unauthorized = execution.get('unauthorized_tool_calls', 1)
           unconfirmed = execution.get('unconfirmed_writes', 1)
           duplicate = execution.get('duplicate_writes', 1)
@@ -126,9 +126,9 @@ jobs:
           python3 -c "
           import json
           report = json.load(open('evals/policy-report.json'))
-          regression = report.get('regression', {})
-          rate = regression.get('pass_rate', 0)
-          leak = regression.get('expired_version_leak_rate', 1)
+          regression = report['results']['regression']['fusion']
+          rate = regression.get('end_to_end_pass_rate', 0)
+          leak = regression.get('expired_version_leakage_rate', 1)
           print(f'RAG regression: {rate:.2%}, expired leak: {leak:.2%}')
           assert rate >= 0.90, f'RAG regression below 90%: {rate:.2%}'
           assert leak == 0, f'Expired version leak: {leak:.2%}'
