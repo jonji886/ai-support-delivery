@@ -108,8 +108,8 @@ export function ChatPage({ role, userId, prefill, onNavigate }: ChatPageProps) {
         }));
       }
 
-      // Check for pending confirmation
-      if (res.error_code === "409_SKILL_CONFIRMATION_REQUIRED" && data.pending_action) {
+      // Check for pending confirmation (write operations require HITL confirmation)
+      if (data.pending_action) {
         const action = data.pending_action as Record<string, unknown>;
         setConfirmation({
           type: "submit_return",
@@ -121,23 +121,6 @@ export function ChatPage({ role, userId, prefill, onNavigate }: ChatPageProps) {
       }
 
       setMessages((prev) => [...prev, aiMsg]);
-    } else if (res.error_code === "409_SKILL_CONFIRMATION_REQUIRED" && res.data) {
-      const data = res.data as Record<string, unknown>;
-      const action = data.pending_action as Record<string, unknown>;
-      setConfirmation({
-        type: "submit_return",
-        orderId: action.order_id as string,
-        returnReason: action.return_reason as string,
-        idempotencyKey: action.idempotency_key as string,
-        eligibilityData: action.eligibility as ReturnEligibilityData | undefined,
-      });
-      // Also show AI message if present
-      if (data.answer) {
-        setMessages((prev) => [
-          ...prev,
-          { id: crypto.randomUUID(), role: "ai", text: data.answer as string, traceId: res.trace_id },
-        ]);
-      }
     } else {
       const errMsg: ChatMessage = {
         id: crypto.randomUUID(),

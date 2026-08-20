@@ -34,7 +34,10 @@ def test_assist_core_colloquial_routes_do_not_require_model() -> None:
     returned = client.post("/assist", json={"message": "尺码不合适，想退", "order_id": "OD202608001", "return_reason": "尺码不合适"}, headers={"X-User-Id": "user-demo-001"})
     complaint = client.post("/assist", json={"message": "客户一直没收到退款", "order_id": "OD202608001"})
     assert logistics.json()["data"]["order_status"] == "运输中"
+    # 可退货申请附带 HITL pending_action（前端据此弹出确认框）
+    assert returned.status_code == 200
     assert returned.json()["data"]["decision"] == "eligible"
+    assert returned.json()["data"]["pending_action"]["eligibility"]["decision"] == "eligible"
     assert complaint.json()["data"]["category"] == "complaint_or_dispute"
 
 
@@ -101,8 +104,10 @@ def test_follow_up_can_supply_missing_return_reason() -> None:
     first = client.post("/assist", json={"message": "我想退货", "order_id": "OD202608001", "session_id": session_id}, headers={"X-User-Id": "user-demo-001"})
     second = client.post("/assist", json={"message": "尺码不合适", "session_id": session_id}, headers={"X-User-Id": "user-demo-001"})
     assert first.status_code == 400
+    # 资格通过且非高危 → 200 + pending_action（HITL 确认）
     assert second.status_code == 200
     assert second.json()["data"]["decision"] == "eligible"
+    assert second.json()["data"]["pending_action"]["eligibility"]["decision"] == "eligible"
 
 
 def test_explicit_order_switch_does_not_reuse_old_return_reason(monkeypatch) -> None:
@@ -197,8 +202,28 @@ def test_return_reason_can_be_extracted_from_user_message() -> None:
         json={"message": "我想退货（原因：尺码不合适）", "order_id": "OD202608001"},
         headers={"X-User-Id": "user-demo-001"},
     )
+    # 可退货 + 非高危 → 200 + pending_action（前端据此弹出 HITL 确认框）
     assert response.status_code == 200
     assert response.json()["data"]["decision"] == "eligible"
+    assert response.json()["data"]["pending_action"]["eligibility"]["decision"] == "eligible"
+    assert response.json()["data"]["pending_action"]["return_reason"] == "尺码不合适"
+    assert response.json()["data"]["pending_action"]["idempotency_key"]
+
+
+def test_assist_extracts_order_id_from_message() -> None:
+    """消息中自然提及订单号（无显式 order_id）也能被识别并完成物流查询。"""
+    response = client.post(
+        "/assist",
+        json={"message": "我的订单 OD202608001 到哪了？"},
+        headers={"X-User-Id": "user-demo-001"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data"]["order_id"] == "OD202608001"
+    assert body["data"]["order_status"] == "运输中"
+    # Web 展示契约：tool_results / answer / extracted_state 已补齐
+    assert body["data"]["tool_results"][0]["name"] == "query_order_logistics"
+    assert body["data"]["extracted_state"]["order_id"] == "OD202608001"
 
 
 def test_return_without_reason_is_a_clarification_not_a_generic_success() -> None:

@@ -49,7 +49,7 @@ def test_oms_contract_exposes_customer_field_names(client: CustomerSystemClient)
     assert payload["customer_ref"] == "user-demo-001"
     assert payload["fulfillment_status"] == "DELIVERED"
     assert payload["category_code"] == "STANDARD_GOODS"
-    assert payload["signed_at"] == "2026-08-05T09:30:00Z"
+    assert payload["signed_at"] == "2026-08-10T09:30:00Z"
 
 
 def test_logistics_contract_exposes_customer_field_names(client: CustomerSystemClient) -> None:
@@ -78,7 +78,7 @@ def test_mapper_translates_customer_fields_to_internal_schema(
     assert record["order_status"] == FULFILLMENT_STATUS["DELIVERED"] == "已签收"
     # STANDARD_GOODS -> standard_goods
     assert record["category"] == "standard_goods"
-    assert record["signed_at"] == "2026-08-05T09:30:00Z"
+    assert record["signed_at"] == "2026-08-10T09:30:00Z"
     # 物流映射：SHIPPED -> 运输中；DEMO_EXPRESS -> Demo Express
     assert record["logistics"]["order_status"] == FULFILLMENT_STATUS["SHIPPED"] == "运输中"
     assert record["logistics"]["carrier"] == CARRIER_CODES["DEMO_EXPRESS"] == "Demo Express"

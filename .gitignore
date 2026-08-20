@@ -17,3 +17,7 @@ runtime/*.sqlite
 node_modules/
 dist/
 *.tsbuildinfo
+
+# Playwright E2E 产物
+apps/web/playwright-report/
+apps/web/test-results/

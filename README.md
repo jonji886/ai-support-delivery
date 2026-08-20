@@ -2,8 +2,6 @@
 
 [![CI](https://github.com/jonji886/ai-support-delivery/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jonji886/ai-support-delivery/actions/workflows/ci.yml)
 
-> 面向 FDE 的 AI Agent 交付工程作品集
-
 一个模拟企业 AI Agent 交付过程的跨境电商售后 POC：从客户调研、自动化范围定义，到 OMS / Logistics 集成、Agent 安全、故障排查、评测、POC 验收和交接。
 
 本仓库展示的是交付方法和可验证工程证据，不是某个真实客户的生产系统。订单、业务基线、接口和评测数据均为模拟或示例数据。
@@ -63,7 +61,7 @@ Agent: 识别投诉 / 风险信号
 
 每个 `/assist` 请求返回 `trace_id`；Supervisor 可以查看 `graph.* → skill.* → tool.* / rag.*` 子 Span、错误码、耗时和处理结果。固定评测脚本会验证 Tool 权限、引用、转人工和状态流转，而不是只检查回答中是否出现某个字符串。
 
-> 视觉证据说明：本轮没有提交伪造截图。当前环境没有可用浏览器运行时，`docs/assets/` 仅作为后续真实截图的位置；现阶段以可复现 API 场景、Trace 和评测报告作为证据。
+> 视觉证据说明：不提交伪造截图。浏览器级验证通过 Playwright E2E 自动化执行（本地 API 与远程 `BASE_URL` 均可）；`docs/assets/` 仅作为后续真实截图的存放位置。现阶段以可复现 API 场景、Trace、评测报告和 E2E 结果作为证据。
 
 ## 客户问题
 
@@ -93,7 +91,8 @@ Agent: 识别投诉 / 风险信号
 - 真实客户 OMS、物流商、ERP、支付或生产工单系统。
 - 真实个人信息、真实订单、真实退款和真实 ROI / SLA。
 - 支付修改、退款审批、不可逆高风险操作的自主执行。
-- 生产级认证、多租户、数据库高可用、外部告警和浏览器 E2E。
+- 生产级认证、多租户、数据库高可用、外部告警。
+- 浏览器 E2E：已自动化（Playwright，本地与远程 `BASE_URL` 均可），但不覆盖真实登录和客服自动分配。
 
 ## 自动化决策矩阵
 
@@ -230,8 +229,9 @@ make demo-oms-timeout
 | RAG 挑战集 | 未见表达和长尾泛化 | 76.67% |
 | Working Memory | TTL、纠正、隔离、陈旧状态 | 12/12，100% |
 | 扩展 Memory | 连续性、偏好、污染、Token 成本 | 9/9，100% |
+| Model Quality（真实模型） | 真实 GLM 意图分类与泛化抽样 | GLM-4-flash：13/13，100%；高风险召回 100%；无 `GLM_API_KEY` 时 SKIP，不阻塞 CI |
 
-按当前 JSON 报告口径合计 268 条检查：RAG 三个数据集共 100 条，Memory 基础与扩展共 21 条。发布门禁保留在 CI：核心 ≥ 85%、Intent ≥ 95% 且高风险召回 100%、Skill 关键违规为 0、RAG 固定回归 ≥ 90%、跨用户泄露/陈旧状态/Memory 污染为 0。
+按当前 JSON 报告口径合计 268 条确定性检查：RAG 三个数据集共 100 条，Memory 基础与扩展共 21 条。发布门禁保留在 CI：核心 ≥ 85%、Intent ≥ 95% 且高风险召回 100%、Skill 关键违规为 0、RAG 固定回归 ≥ 90%、跨用户泄露/陈旧状态/Memory 污染为 0。Model Quality Eval 是可选增强门禁，不替代确定性回归。
 
 ### 如何解读指标
 
@@ -265,7 +265,7 @@ flowchart LR
 | 阶段 | 交付证据 |
 |---|---|
 | 调研 / 范围 | [客户调研](docs/customer-discovery.md)、[SPEC](SPEC.md) |
-| 方案设计 | [方案设计](docs/solution-design.md)、[API 契约](docs/api-contracts.md)、[ADR](docs/adr/) |
+| 方案设计 | [Case Study](docs/case-study.md)、[方案设计](docs/solution-design.md)、[API 契约](docs/api-contracts.md)、[ADR](docs/adr/) |
 | 评测 / 验收 | [评测与 Badcase](docs/evaluation-and-badcase.md)、[POC 验收报告](docs/poc-acceptance-report.md) |
 | 部署 / 交接 | [交付手册](docs/delivery-playbook.md)、[部署运行手册](docs/deployment-runbook.md)、[云部署方案](docs/cloud-deployment.md) |
 | 面试讲解 | [Portfolio Walkthrough](docs/portfolio-walkthrough.md) |
@@ -303,7 +303,19 @@ make eval
 cd apps/web && npm run build
 ```
 
-CI 不连接 DeepSeek 或其他付费模型；真实模型评测如果启用，应单独运行，不能替代确定性评测门禁。
+浏览器级 E2E（Playwright，本地 API 或远程 `BASE_URL` 均可）：
+
+```bash
+# 本地：先启动 mock 客户系统 + API + 前端，然后
+cd apps/web
+npx playwright install chromium
+BASE_URL=http://localhost:5173 npm run e2e
+
+# 远程（如 Lighthouse 已部署）：
+BASE_URL=https://<your-lighthouse-domain> npm run e2e
+```
+
+CI 不连接 DeepSeek 或其他付费模型；真实模型评测（`evals/model_eval.py`，支持 GLM）如果启用，应单独运行，不能替代确定性评测门禁。E2E 默认在 CI 中运行确定性回归；浏览器测试需 `PLAYWRIGHT_E2E=1` 显式开启。
 
 ## 已知限制
 
@@ -314,20 +326,22 @@ CI 不连接 DeepSeek 或其他付费模型；真实模型评测如果启用，�
 | 持久化 | SQLite 单文件；生产需要迁移、备份、并发和租户隔离 |
 | 可靠性 | 熔断器为单进程内存状态；没有共享状态和生产级队列 |
 | RAG | 内存线性扫描 + 确定性 provider；未验证真实索引容量和模型效果 |
-| LLM 评测 | 当前发布门禁不调用真实模型；没有线上流量泛化结论 |
+| LLM 评测 | 本地已用真实 GLM 完成固定样本评测；无 Key 时 SKIP，仍无线上流量泛化结论 |
 | 可观测性 | 本地 SQLite Trace/Event；没有外部采集器、告警、采样和保留策略 |
-| 前端界面 | React 演示工作台；当前未完成浏览器级 E2E、真实登录和客服自动分配 |
-| 部署 | Docker / 云部署方案已文档化，但本地验证环境未执行真实云部署 |
+| 前端界面 | React 演示工作台；Playwright E2E 已覆盖核心交互，真实登录和客服自动分配未实现 |
+| 部署 | Docker Compose + Lighthouse 部署脚本已就绪；真实云部署验证状态见 [POC 验收报告](docs/poc-acceptance-report.md) |
 
 ## 深入文档
 
 - [SPEC.md](SPEC.md)：需求、边界、权限、状态流转和验收标准
+- [Case Study](docs/case-study.md)：Requirement → Decision → Implementation → Evidence 交付追踪
 - [客户调研](docs/customer-discovery.md)：模拟客户背景、流程、基线、风险和开放问题
 - [方案设计](docs/solution-design.md)：Agent / Skill / Tool、信任边界、集成和可观测性
 - [评测与 Badcase](docs/evaluation-and-badcase.md)：数据集分层、门禁和问题归因
 - [POC 验收报告](docs/poc-acceptance-report.md)：当前真实评测结果与未验证项
 - [故障排查案例](docs/incident-debugging-case.md)：模拟 FDE 故障排查、证据和客户沟通
 - [交付手册](docs/delivery-playbook.md)：客户调研 → 范围定义 → POC → 评测 → 交接
+- [Agent 交接文档](docs/agent-handover.md)：当前未完成任务与上下文，供后续 Agent 接手
 - [部署运行手册](docs/deployment-runbook.md)：启动、配置、排障和回滚
 - [Portfolio Walkthrough](docs/portfolio-walkthrough.md)：面试时的 5 分钟讲解路径
 - [API 契约](docs/api-contracts.md)：API、Tool、错误、权限和幂等契约
@@ -336,7 +350,7 @@ CI 不连接 DeepSeek 或其他付费模型；真实模型评测如果启用，�
 
 ## 技术概览
 
-React 18 + TypeScript + Vite · FastAPI · LangGraph · SQLite · RAG · 确定性评测 · Docker Compose。技术栈是实现手段，交付边界和可验证证据才是本项目的重点。
+React 18 + TypeScript + Vite · FastAPI · LangGraph · SQLite · RAG · 确定性评测 · Playwright E2E · Docker Compose · 腾讯云 Lighthouse 部署脚本。技术栈是实现手段，交付边界和可验证证据才是本项目的重点。
 
 ## 许可证
 

@@ -40,6 +40,7 @@ class SupportState(TypedDict, total=False):
     conversation_intent: str
     record_conversation: bool
     session_update: Dict[str, Any]
+    next_actions: list[str]
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,15 @@ def _extract_return_reason(message: str) -> Optional[str]:
     return match.group(1).strip() if match else None
 
 
+_ORDER_ID_PATTERN = re.compile(r"\bOD\d{9}\b")
+
+
+def _extract_order_id(message: str) -> Optional[str]:
+    """Extract a well-formed order id (e.g. OD202608001) from a user message."""
+    match = _ORDER_ID_PATTERN.search(message or "")
+    return match.group(0) if match else None
+
+
 def build_support_graph(deps: SupportGraphDependencies) -> Any:
     """Build the compiled graph with explicit, testable business routes."""
 
@@ -95,7 +105,10 @@ def build_support_graph(deps: SupportGraphDependencies) -> Any:
                 "record_conversation": False,
             }
         session = deps.conversations.get(request.session_id, user_id)
-        if request.order_id and session and session.get("order_id") and request.order_id != session["order_id"]:
+        # Order id may be passed explicitly (request body / demo card) or
+        # mentioned naturally in the message. Both are treated as explicit.
+        explicit_order_id = request.order_id or _extract_order_id(request.message)
+        if explicit_order_id and session and session.get("order_id") and explicit_order_id != session["order_id"]:
             # Explicit request data has higher authority than inherited memory.
             # Do not let old order-scoped slots influence the switching turn.
             session = dict(session)
@@ -109,7 +122,7 @@ def build_support_graph(deps: SupportGraphDependencies) -> Any:
         return {
             "normalized_message": _normalize_message(request.message),
             "session": session,
-            "effective_order_id": request.order_id or (session or {}).get("order_id"),
+            "effective_order_id": explicit_order_id or (session or {}).get("order_id"),
             "previous_intent": (session or {}).get("last_intent"),
             "previous_unresolved": int((session or {}).get("unresolved_count", 0)),
         }
@@ -259,15 +272,17 @@ def _skill_outcome(outcome: SkillResult, request: AssistRequest, state: SupportS
         "skill_version": outcome.skill_version,
         "skill_status": outcome.status,
         "record_conversation": outcome.record_conversation,
+        "next_actions": list(outcome.next_actions),
     })
     return update
 
 
 def _outcome(result: ToolResponse, tool_name: str, conversation_intent: str, request: AssistRequest, state: SupportState, **session_values: Any) -> SupportState:
     slot_sources = dict(session_values.pop("slot_sources", {}))
-    if request.order_id:
+    explicit_order_id = request.order_id or _extract_order_id(request.message)
+    if explicit_order_id:
         previous_order_id = (state.get("session") or {}).get("order_id")
-        slot_sources["order_id"] = "user_correction" if previous_order_id and previous_order_id != request.order_id else "user_explicit"
+        slot_sources["order_id"] = "user_correction" if previous_order_id and previous_order_id != explicit_order_id else "user_explicit"
     elif state.get("effective_order_id"):
         slot_sources["order_id"] = "conversation_inherited"
     if request.return_reason or _extract_return_reason(request.message):

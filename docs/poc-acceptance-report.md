@@ -2,7 +2,9 @@
 
 ## 报告口径
 
-本报告由 `evals/render_acceptance_report.py` 合并核心、意图、记忆、Skill 与 RAG 专项评测 JSON 后自动生成；核心固定集由 `evals/mvp-50.jsonl` 提供，当前数据集版本为 `v3`。README、验收报告和评测 JSON 不维护互相独立的手工指标。
+本报告由 `evals/render_acceptance_report.py` 合并核心、意图、记忆、Skill、RAG 与真实模型专项评测 JSON 后自动生成；核心固定集由 `evals/mvp-50.jsonl` 提供，当前数据集版本为 `v3`。README、验收报告和评测 JSON 不维护互相独立的手工指标。
+
+Model Quality Eval（`evals/model_eval.py`）与 Deterministic 门禁分离：确定性回归是 CI 发布门禁；真实 GLM 评测需要 `GLM_API_KEY`，未配置时输出 SKIP 报告并以退出码 0 结束，不阻塞 CI。
 
 ## 当前结果
 
@@ -12,7 +14,7 @@
 | 规则引用有效率 | 100.00% | ≥ 90% | 达标 |
 | 高风险转人工覆盖率 | 100.00% | ≥ 95% | 达标 |
 | Tool 成功率 | 100.00% | ≥ 95% | 达标 |
-| 本地 TestClient P95 | 约 110.05ms | ≤ 10 秒 | 达标 |
+| 本地 TestClient P95 | 约 486.76ms | ≤ 10 秒 | 达标 |
 | 意图目录固定集 | 60/60，100.00% | ≥ 95% | 达标 |
 | 高风险意图召回率 | 100.00% | 100% | 达标 |
 | 短期状态场景通过率 | 12/12，100.00% | 100% | 达标 |
@@ -24,7 +26,7 @@
 
 当前结论：四类核心流程可以本地演示；高风险路由和部分异常场景是否达到试点标准，以以上指标和 SPEC 阻断条件为准。该结果不代表客户生产收益。
 
-当前报告合计 268 条检查：核心 58、Intent 60、Skill 29、RAG 三个数据集 100、Memory 基础与扩展 21。不同专项存在数据集重叠时按所属报告统计，不把这个合计解释为独立生产流量样本。
+当前报告合计 268 条确定性检查：核心 58、Intent 60、Skill 29、RAG 三个数据集 100、Memory 基础与扩展 21。不同专项存在数据集重叠时按所属报告统计，不把这个合计解释为独立生产流量样本。真实模型评测（Model Quality Eval）不计入该确定性合计，结果见"Model Quality 专项结果"。
 
 ## 评测覆盖
 
@@ -46,6 +48,10 @@ Skill 选择层共 16 条，验证意图到 Skill 映射、多意图与高风险
 
 该结果证明当前四个 POC Skill 的确定性契约，不代表生产环境的跨服务分发、并发容量、在线灰度或真实模型选择效果。
 
+## Model Quality 专项结果
+
+真实模型评测（GLM glm-4-flash，数据集 model-quality-v1）共 13 条，通过 13 条，意图准确率 100.00%、高风险（投诉/支付敏感）召回率 100.00%、调用失败 0 次、P95 时延 1536.0ms，门禁通过。失败 0 条：无。该结果反映固定样本上真实模型的分类质量，不代表线上流量泛化。
+
 ## RAG 专项结果
 
 RAG 专项集共 100 条：开发集 30 条、固定回归集 40 条、挑战集 30 条。发布门禁使用 `fusion`：固定回归端到端通过率 100.00%、无依据拒答率 100.00%、过期版本泄漏率 0.00%，发布门禁通过；挑战集通过率为 76.67%。
@@ -60,12 +66,28 @@ RAG 专项集共 100 条：开发集 30 条、固定回归集 40 条、挑战集
 
 ## 尚未验证
 
-- Docker Compose 容器网络环境的独立采样尚未执行，当前环境没有 Docker CLI。
-- 浏览器级 E2E 尚未在本环境执行：当前未检测到 Playwright/Selenium 或可用浏览器运行时；已完成 API、前端源码契约和 JavaScript 语法验证。
+### Verified（本环境已实际执行）
+
+- 本地确定性评测全部通过（核心、意图、记忆、Skill、RAG），报告见上表。
+- Playwright E2E 在本地 API 与前端上执行通过（3 个场景：物流查询、退货确认、投诉转人工），支持 `BASE_URL` 指向远程部署。
+- Model Quality Eval 已实际执行：GLM glm-4-flash，通过 13/13，意图准确率 100.00%、高风险召回率 100.00%；结果见上方 Model Quality 专项结果。
+
+### Automated but not executed（脚本/代码已就绪，尚未实际运行）
+
+
+- 容器构建与全量镜像验证：`deploy/docker-compose.yml` 与 `deploy/deploy-lighthouse.sh` 已就绪，但本机无 Docker CLI，未在本地执行容器级采样。
+
+### Pending remote verification（需在腾讯云 Lighthouse 上验证）
+
+- 真实云部署：Lighthouse 实例上执行 `deploy/deploy-lighthouse.sh` 并访问公网地址。
+- 远程浏览器 E2E：`BASE_URL=https://<lighthouse-domain> npm run e2e`。
+- 真实模型 Provider 在云环境的时延、配额与故障切换。
+
+### 未纳入范围（有意为之）
+
 - 当前前端仍是演示工作台，不包含真实登录、客服自动分配和生产级实时质量看板；会话、工单、退货申请、质量事件和本地 Trace/Span 已使用 SQLite 持久化。
 - 本地 TraceStore 尚未接入外部观测后端、告警推送、采样、自动保留和跨服务上下文传播。
 - RAG 本地评测使用确定性 embedding/reranker Provider，不代表生产模型效果。
-- 意图专项目前评测目录的确定性安全路由；真实 DeepSeek/其他模型仍需按模型与 Prompt 版本建立独立数据切片和灰度报告。
 - Intent Catalog 当前为仓库内 JSON，尚无运营后台、审批流和在线灰度；短期状态使用 SQLite，尚无生产级 Schema 迁移、并发和多租户治理。
 - Skill Manifest 当前为仓库内 JSON，尚无远程注册中心、依赖解析、兼容性自动检查、审批发布和按版本流量灰度。
 - 当前规则检索仍是内存线性扫描 POC，生产索引、增量入库、真实 Provider 容量与故障验证尚未完成。

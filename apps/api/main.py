@@ -355,6 +355,29 @@ def assist(request: AssistRequest, x_user_id: Optional[str] = Header(default=Non
     final_state = support_graph.invoke({"request": request, "user_id": x_user_id, "trace_id": trace_id})
     result = final_state["result"]
 
+    # Web 展示契约适配：Tool 返回的业务 data 补齐 Chat 前端所需展示字段。
+    # 业务 Tool 端点（/tools/*）保持纯业务契约不变，仅 /assist 面向 Web Chat 做适配。
+    # 资格判断是只读操作，保持 200；需要用户确认的写操作通过 pending_action 提示，
+    # 前端据此弹出 HITL 确认框，确认后走 /tools/* 端点（executor 在未确认时返回 409）。
+    next_actions = final_state.get("next_actions") or []
+    data = dict(result.data) if isinstance(result.data, dict) else {}
+    if result.success and final_state.get("tool_name"):
+        data["tool_results"] = [{"name": final_state["tool_name"], "data": result.data}]
+    data["answer"] = result.message
+    data["extracted_state"] = {
+        "order_id": final_state.get("effective_order_id"),
+        "return_reason": (final_state.get("session_update") or {}).get("return_reason"),
+    }
+    if "confirm_return_application" in next_actions:
+        data["pending_action"] = {
+            "action": "confirm_return_application",
+            "order_id": final_state.get("effective_order_id"),
+            "return_reason": (final_state.get("session_update") or {}).get("return_reason"),
+            "idempotency_key": uuid.uuid4().hex,
+            "eligibility": result.data,
+        }
+    result.data = data
+
     # Memory: record AI response and inject memory context into response
     if x_user_id and request.session_id and result.success and result.data:
         answer = result.data.get("answer", "") if isinstance(result.data, dict) else ""

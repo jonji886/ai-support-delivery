@@ -47,6 +47,11 @@ eval:
 	python3 evals/run_memory_eval_extended.py
 	python3 evals/run_skill_eval.py
 	python3 evals/run_policy_eval.py
+	python3 evals/model_eval.py
+	python3 evals/render_acceptance_report.py
+
+model-eval:
+	python3 evals/model_eval.py
 
 verify: test eval
 	@echo "--- Build Verification ---"
