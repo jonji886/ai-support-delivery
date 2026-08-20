@@ -1,6 +1,6 @@
 # AI Support Delivery
 
-[![CI](https://github.com/user/ai-support-delivery/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/user/ai-support-delivery/actions/workflows/ci.yml)
+[![CI](https://github.com/jonji886/ai-support-delivery/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jonji886/ai-support-delivery/actions/workflows/ci.yml)
 
 > 一个面向跨境电商售后的全栈 Agent 产品，演示 React + FastAPI + LangGraph + RAG + Memory + Tool Use + Human-in-the-loop 的完整 AI 应用工程链路。
 
