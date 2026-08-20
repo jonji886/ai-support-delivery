@@ -64,7 +64,7 @@ demo-oms-timeout:
 
 # === Linting ===
 lint:
-	python3 -m ruff check apps/ evals/ scripts/ tests/
+	python3 -m ruff check .
 
 # === Cleanup ===
 clean:

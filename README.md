@@ -2,13 +2,16 @@
 
 [![CI](https://github.com/jonji886/ai-support-delivery/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jonji886/ai-support-delivery/actions/workflows/ci.yml)
 
-一个模拟企业 AI Agent 交付过程的跨境电商售后 POC：从客户调研、自动化范围定义，到 OMS / Logistics 集成、Agent 安全、故障排查、评测、POC 验收和交接。
+> 企业 AI Agent 交付工作台：面向 FDE / AI Application Delivery / Agent Engineer 的作品集项目。
+
+这是一个跨境电商售后 POC，用可运行、可评测的方式展示如何把 LLM Agent 接入真实业务流程，而不是只做一个聊天 Demo。项目覆盖客户问题定义、Agent 编排、Skill / Tool 集成、风险控制、人工接管、评测回归、故障排查和交付交接。
 
 本仓库展示的是交付方法和可验证工程证据，不是某个真实客户的生产系统。订单、业务基线、接口和评测数据均为模拟或示例数据。
 
-## 项目概览
+## 项目定位
 
 客户售后团队需要在 OMS、物流系统、规则库和工单队列之间切换。低风险、高频问题适合自动化；投诉、支付敏感、规则无依据和外部系统故障则必须停止猜测并转人工。
+
 
 ```text
 客户问题
@@ -20,9 +23,40 @@
   → 运行手册与交付交接
 ```
 
-核心架构刻意保持简单：`Agent → Skill → Tool → Integration Adapter`。模型理解用户，Tool 和客户系统证明业务事实，人工处理例外。
+核心架构刻意保持简单：`Agent → Skill → Tool → Integration Adapter`。业务链路是：业务问题 → Agent 编排 → Skill → Tool → 风险控制 / HITL → Eval → Observability → Delivery。
 
-## 演示
+## Demo / 项目演示
+
+以下截图来自现有 React 工作台、Mock Customer Services 和 Deterministic Fixtures，不代表生产客户数据：
+
+<table>
+  <tr>
+    <td><img src="docs/assets/demo-chat.png" alt="正常业务对话：Agent 调用物流 Tool" width="480" /></td>
+    <td><img src="docs/assets/demo-hitl.png" alt="高风险写操作：退货提交前人工确认" width="480" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>正常 Tool Calling：物流事实来自 OMS / Logistics</sub></td>
+    <td align="center"><sub>HITL：写操作先校验、再确认，不由 LLM 直接执行</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/demo-handoff.png" alt="投诉场景人工接管" width="480" /></td>
+    <td><img src="docs/assets/demo-observability.png" alt="可观测性：Trace、Tool 与延迟指标" width="480" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>人工接管：风险原因、工单摘要和 Trace 可追溯</sub></td>
+    <td align="center"><sub>Observability：请求、操作、错误率、P95 和最慢 Trace</sub></td>
+  </tr>
+</table>
+
+## Architecture Philosophy
+
+- **LLM 负责理解与路由**：识别意图、补齐上下文、选择场景 Skill。
+- **Tool 负责业务事实与确定性执行**：订单、物流、规则和写操作都经过受控契约。
+- **Human 负责高风险与例外**：投诉、支付敏感、低置信度、争议和依赖故障进入人工路径。
+
+一句话：**LLM 负责理解，Tool 负责事实，Human 负责例外。**
+
+### 业务链路示例
 
 ### 1. 普通咨询——只读事实查询
 
@@ -218,24 +252,24 @@ make demo-oms-timeout
 
 ## 评测与验收
 
-当前报告来自本地确定性 POC 数据，不是客户生产结果：
+当前固定回归集结果。测试环境：`Mock Business Services + Deterministic Fixtures`。这些比例用于验证业务契约和回归稳定性，不代表开放世界场景下的模型准确率，也不代表客户生产结果：
 
 | 评测套件 | 用途 | 当前结果 |
 |---|---|---:|
-| 核心回归 | 发布前核心业务契约 | 58/58，100% |
-| Intent Catalog | 路由、混淆边界、高风险召回 | 60/60，高风险召回 100% |
-| Skill 选择 / 执行 | 场景选择与内部流程 | 16/16；13/13 |
-| RAG 回归 | 固定知识回归、引用和拒答 | 40/40，100% |
+| 核心回归 | 发布前核心业务契约 | 58/58（固定回归集通过率 100%） |
+| Intent Catalog | 路由、混淆边界、高风险召回 | 60/60（固定回归集通过率 100%；高风险召回 100%） |
+| Skill 选择 / 执行 | 场景选择与内部流程 | 选择 16/16；执行 13/13（固定回归集） |
+| RAG 回归 | 固定知识回归、引用和拒答 | 40/40（固定回归集通过率 100%） |
 | RAG 挑战集 | 未见表达和长尾泛化 | 76.67% |
-| Working Memory | TTL、纠正、隔离、陈旧状态 | 12/12，100% |
-| 扩展 Memory | 连续性、偏好、污染、Token 成本 | 9/9，100% |
-| Model Quality（真实模型） | 真实 GLM 意图分类与泛化抽样 | GLM-4-flash：13/13，100%；高风险召回 100%；无 `GLM_API_KEY` 时 SKIP，不阻塞 CI |
+| Working Memory | TTL、纠正、隔离、陈旧状态 | 12/12（固定回归集通过率 100%） |
+| 扩展 Memory | 连续性、偏好、污染、Token 成本 | 9/9（固定回归集通过率 100%） |
+| Model Quality（真实模型） | GLM 意图分类与泛化抽样 | GLM-4-flash：固定抽样 12/13（样本通过率 92.31%）；高风险召回 100%；1 个边界样本待优化；无 `GLM_API_KEY` 时 SKIP，不阻塞 CI |
 
 按当前 JSON 报告口径合计 268 条确定性检查：RAG 三个数据集共 100 条，Memory 基础与扩展共 21 条。发布门禁保留在 CI：核心 ≥ 85%、Intent ≥ 95% 且高风险召回 100%、Skill 关键违规为 0、RAG 固定回归 ≥ 90%、跨用户泄露/陈旧状态/Memory 污染为 0。Model Quality Eval 是可选增强门禁，不替代确定性回归。
 
 ### 如何解读指标
 
-`确定性回归 100% ≠ 生产准确率 100%`。
+`固定回归集通过率 100% ≠ 生产准确率 100%`。
 
 - 固定回归集证明已知业务契约没有回归，不证明未知表达都能正确处理。
 - RAG 挑战集当前为 76.67%，明确暴露了 POC 的泛化缺口；它不是 CI 阻断门禁。

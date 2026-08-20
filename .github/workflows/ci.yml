@@ -8,7 +8,7 @@ on:
 
 jobs:
   lint:
-    name: Lint & Static Check
+    name: Lint & Static Check (Blocking Gate)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,7 +17,7 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt -q
       - name: Ruff check (blocking)
-        run: python3 -m ruff check apps/ evals/ scripts/ tests/
+        run: python3 -m ruff check .
 
   test:
     name: Unit & Integration Tests

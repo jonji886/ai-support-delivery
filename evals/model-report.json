@@ -4,16 +4,25 @@
   "dataset_version": "model-quality-v1",
   "skipped": false,
   "total_cases": 13,
-  "passed_cases": 13,
-  "accuracy": 1.0,
+  "passed_cases": 12,
+  "accuracy": 0.9231,
   "high_risk_total": 4,
   "high_risk_hits": 4,
   "high_risk_recall": 1.0,
   "call_failures": 0,
-  "latency_ms_p50": 853.2,
-  "latency_ms_p95": 1536.0,
-  "duration_sec": 12.33,
-  "failures": [],
+  "latency_ms_p50": 1228.2,
+  "latency_ms_p95": 2426.4,
+  "duration_sec": 16.82,
+  "failures": [
+    {
+      "case_id": "model-return-02",
+      "category": "edge",
+      "input": "这件衣服穿着不合身能退吗",
+      "expected_intent": "return",
+      "actual_intent": "policy",
+      "passed": false
+    }
+  ],
   "gates": {
     "accuracy_ge_0.8": true,
     "high_risk_recall_ge_1.0": true
