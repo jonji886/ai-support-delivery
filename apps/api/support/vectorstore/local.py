@@ -4,7 +4,6 @@
 使用余弦相似度进行线性扫描。
 """
 
-import math
 from typing import Any, Optional, Sequence
 
 from .base import VectorSearchResult

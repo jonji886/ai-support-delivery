@@ -64,7 +64,7 @@
 | **输入** | Solution Design |
 | **动作** | 实现 Mock 数据、受控 Tool、场景 Skill、RAG 和前端工作台；建立 Docker Compose 部署 |
 | **输出** | 可演示 POC、Mock 数据集、部署手册 |
-| **验收标准** | 四类核心场景可端到端演示；高风险问题正确转人工；Docker 可一键启动 |
+| **验收标准** | 四类核心场景可端到端演示；高风险问题正确转人工；Docker Compose 配置可供部署验证 |
 
 POC 边界：
 
@@ -92,10 +92,13 @@ POC 边界：
 | 核心固定集 | 58 | ≥ 85% |
 | 意图专项 | 60 | ≥ 95%，高风险 100% |
 | 短期状态 | 12 | 100%，泄漏 0% |
+| Memory 扩展 | 9 | 100%，污染 0% |
 | Skill 选择 | 16 | ≥ 95% |
 | Skill 执行 | 13 | ≥ 95% |
 | RAG 回归 | 40 | ≥ 90% |
 | RAG 挑战 | 30 | 报告指标，非门禁 |
+
+当前按报告口径合计 268 条检查；RAG Challenge 的 76.67% 只作为泛化观察，不作为 CI blocking gate。固定回归 100% 也不等于生产准确率。
 
 参考：[`docs/evaluation-and-badcase.md`](evaluation-and-badcase.md)、[`docs/poc-acceptance-report.md`](poc-acceptance-report.md)
 
@@ -152,3 +155,5 @@ flowchart LR
 ```text
 Input → Action → Output → Acceptance Criteria
 ```
+
+本 POC 当前停留在 Evaluation / Acceptance 后、真实 Pilot 前；Docker、浏览器 E2E、真实客户认证和生产流量均需在客户环境另行验证。

@@ -1,7 +1,7 @@
 """VectorStoreProvider Protocol — 向量存储抽象。"""
 
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol, Sequence
+from typing import Any, Optional, Protocol
 
 
 @dataclass

@@ -10,11 +10,15 @@ Agent 侧服务通过本客户端访问客户系统，**不再直接读取 mock 
 * 5xx / 网络错误    -> :class:`ExternalUnavailableError`
 * 超时             -> :class:`ExternalTimeoutError`
 
+本地演示可设置 ``MOCK_CUSTOMER_FAULT=timeout`` 或 ``MOCK_CUSTOMER_SLOW_MS``
+将故障注入请求转发到 Mock Customer Systems；生产环境不应启用这些变量。
+
 ``OrderNotFoundError`` / ``OrderForbiddenError`` 是业务性错误（非 Infrastructure 故障），
 因此继承自 :class:`Exception` 而非 ``IntegrationError``，不会被 Adapter 当作上游故障处理。
 """
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 import httpx
@@ -41,6 +45,10 @@ class CustomerSystemClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout_ms / 1000.0
         self.system = system
+        # Local/demo-only fault forwarding. Explicit per-request headers still
+        # take precedence, so tests and operators can target one call.
+        self.fault_mode = os.getenv("MOCK_CUSTOMER_FAULT", "").strip()
+        self.slow_ms = os.getenv("MOCK_CUSTOMER_SLOW_MS", "").strip()
         self._http = httpx.Client(timeout=self.timeout)
 
     def fetch_order(self, order_id: str, user_id: str, *, headers: Optional[dict] = None) -> dict:
@@ -53,6 +61,10 @@ class CustomerSystemClient:
 
     def _get(self, path: str, user_id: str, *, headers: Optional[dict] = None) -> dict:
         request_headers = {"X-User-Id": user_id}
+        if self.fault_mode:
+            request_headers["X-Fault-Inject"] = self.fault_mode
+        if self.slow_ms:
+            request_headers["X-Mock-Slow-Ms"] = self.slow_ms
         if headers:
             request_headers.update(headers)
         try:

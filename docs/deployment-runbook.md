@@ -25,6 +25,14 @@ curl -s http://127.0.0.1:8000/admin/traces/<trace_id> \
 
 依次查看 `trace.status/error_type`、状态为 `error` 的 Span、其 `error_code/error_type`，再通过 `parent_span_id` 定位所属 `graph.*` 节点。未处理异常也会返回可查询的 `trace_id`；受控业务失败可能保持 HTTP 200，但对应的 `tool.*` 或 `rag.*` Span 会标记为 `error`。
 
+### 复现 OMS 超时
+
+```bash
+make demo-oms-timeout
+```
+
+该命令启动隔离的 Mock Customer Systems 和 API，使用 `MOCK_CUSTOMER_FAULT=timeout` 让客户 HTTP 边界超时，随后打印 `504_EXTERNAL_TIMEOUT`、`handoff=true` 和 Trace Span。它是本地 `Simulated` incident demo；生产环境不要设置 `MOCK_CUSTOMER_FAULT` / `MOCK_CUSTOMER_SLOW_MS`。
+
 ### 分析耗时和失败
 
 ```bash

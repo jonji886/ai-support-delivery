@@ -3,7 +3,6 @@
 import pytest
 
 from apps.api.support.vectorstore import LocalVectorStore, create_vector_store
-from apps.api.support.vectorstore.base import VectorSearchResult
 
 
 class TestLocalVectorStore:
@@ -122,7 +121,7 @@ class TestFactory:
         monkeypatch.setenv("VECTOR_STORE_PROVIDER", "chroma")
         # 如果 chromadb 未安装，应该抛出 ImportError
         try:
-            import chromadb  # noqa: F401
+            __import__("chromadb")
             pytest.skip("chromadb is installed")
         except ImportError:
             with pytest.raises(ImportError, match="chromadb is not installed"):

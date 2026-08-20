@@ -9,7 +9,6 @@ from apps.api.main import app
 from apps.api.skills.contracts import SkillExecutionContext, SkillResult
 from apps.api.skills.executor import SkillExecutor
 from apps.api.skills.registry import SkillRegistry
-from apps.api.support.observability import TraceStore
 from apps.api.support.responses import ToolResponse
 
 
@@ -73,14 +72,11 @@ def test_registry_rejects_two_skills_claiming_the_same_intent(tmp_path: Path) ->
 
 def test_executor_blocks_unauthorized_tool_before_callback() -> None:
     executor = SkillExecutor(SkillRegistry.from_default_manifests(), NoopObservability())
-    callback_called = False
+    callback_called = [False]
 
     def handler(context, tools):
-        nonlocal callback_called
-
         def callback():
-            nonlocal callback_called
-            callback_called = True
+            callback_called[0] = True
             return ToolResponse.success_result({}, context.trace_id, "不应执行")
 
         result = tools.call("submit_return_application", "write", callback)
@@ -92,20 +88,17 @@ def test_executor_blocks_unauthorized_tool_before_callback() -> None:
         handler,
     )
 
-    assert callback_called is False
+    assert callback_called[0] is False
     assert outcome.result.error_code == "500_SKILL_TOOL_POLICY_VIOLATION"
 
 
 def test_executor_blocks_write_without_explicit_confirmation() -> None:
     executor = SkillExecutor(SkillRegistry.from_default_manifests(), NoopObservability())
-    callback_called = False
+    callback_called = [False]
 
     def handler(context, tools):
-        nonlocal callback_called
-
         def callback():
-            nonlocal callback_called
-            callback_called = True
+            callback_called[0] = True
             return ToolResponse.success_result({}, context.trace_id, "不应执行")
 
         result = tools.call("submit_return_application", "write", callback)
@@ -117,7 +110,7 @@ def test_executor_blocks_write_without_explicit_confirmation() -> None:
         handler,
     )
 
-    assert callback_called is False
+    assert callback_called[0] is False
     assert outcome.result.error_code == "409_SKILL_CONFIRMATION_REQUIRED"
 
 

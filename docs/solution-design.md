@@ -42,6 +42,39 @@ stateDiagram-v2
 
 Tool 的 `success` 表示原子调用按契约返回，不等于场景已自动闭环；例如资格查询成功但 `requires_human=true` 时，Skill 状态为 `handoff`。这一层状态区分用于正确计算自动解决率和人工压力。
 
+## Customer System Integration Boundary
+
+当前 POC 用 HTTP Mock Customer Systems 模拟客户 OMS 和 Logistics；Agent 侧不直接读取 `data/mock/customer/*.json`。实际边界是：
+
+```text
+Customer OMS / Logistics API
+  → CustomerSystemClient
+  → IntegrationAdapter
+  → apps/api/support/mappers.py
+  → canonical order / logistics record
+  → query_order_logistics Tool
+  → logistics_inquiry Skill
+```
+
+客户字段和内部字段的映射是显式、可测试的契约：
+
+| Canonical field | Customer field | Current mapping |
+| --- | --- | --- |
+| `order_id` | `order_no` | direct |
+| `anonymous_user_id` | `customer_ref` | direct |
+| `order_status` | `fulfillment_status` | `DELIVERED` → `已签收` |
+| `category` | `category_code` | `STANDARD_GOODS` → `standard_goods` |
+| `logistics.carrier` | `carrier_code` | `DEMO_EXPRESS` → `Demo Express` |
+| `logistics.latest_event` | `tracking_events[-1]` | event fields normalized into one event |
+| `logistics.exception` | `has_exception` | boolean normalization |
+| `logistics.estimated_arrival` | `eta` | direct |
+
+这个边界的交付价值是把客户 API 的字段命名、枚举和错误契约限制在 Client / Mapper 中；Agent 和 Skill 只消费 canonical domain model。当前 Ticket 仍是 SQLite POC Service，不虚构已接入外部 SCRM。真实客户接入前需要补充认证、限流、字段版本、契约测试和数据脱敏确认。
+
+## Automation Boundary
+
+自动化决策与架构边界一致：物流查询是只读自动化，退货资格是带规则证据的自动判断，退货提交必须确认后写入；投诉、退款争议、支付敏感和外部依赖故障进入人工。这个决策矩阵来自 [`customer-discovery.md`](customer-discovery.md)，不是由模型临时决定。
+
 ## 意图资产与安全路由
 
 `config/intent-catalog.json` 是意图边界的单一配置来源。每个条目包含业务描述、owner、风险等级、优先级、必需槽位、允许/禁止 Tool、风险标签、规则信号、正例和 hard negative；服务启动时校验必需意图及其路由 Tool，配置不完整即 fail fast。分类结果记录 `catalog_version`、主意图、次意图和风险标签，便于回放一次决定依据的业务版本。
@@ -205,7 +238,7 @@ flowchart TB
 
 | 组件 | 当前 POC 状态 | 生产推荐 |
 | --- | --- | --- |
-| Web 工作台 | 无构建静态 HTML | React/Next.js + 浏览器 E2E |
+| Web 工作台 | React + TypeScript + Vite 演示工作台 | 浏览器 E2E + 客户身份接入 |
 | Reverse Proxy | Docker Compose Nginx | 云负载均衡 + WAF |
 | FastAPI | 本地模拟身份 | 客户认证 + JWT + 多租户 |
 | LangGraph | 单进程编排 | 分布式执行 + checkpointer |

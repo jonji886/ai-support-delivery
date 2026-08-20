@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from .store import MemoryStore, MemoryRecord
-from .policy import MemoryWritePolicy, MemoryCandidate, MemoryRecord_light
+from .policy import MemoryWritePolicy, MemoryRecord_light
 from .retrieval import retrieve_relevant_memory, build_context_for_prompt
 
 logger = logging.getLogger(__name__)

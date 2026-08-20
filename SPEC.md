@@ -33,7 +33,7 @@
 
 1. Web 对话工作台与人工接管视图。
 2. 可生产化演进的 RAG 规则问答 POC：文档分块、生命周期与区域硬过滤、向量/关键词召回、RRF 融合、可选 Cross-Encoder/model 重排、证据充分性门禁和片段级引用；本地测试可使用确定性 Provider，生产模式必须注入真实模型服务和持久化索引并通过消融评测。
-3. 订单与物流查询 Tool（使用本地模拟 OMS/物流数据）。
+3. 订单与物流查询 Tool（通过 HTTP 接入本地模拟 OMS/物流系统，并经过字段映射）。
 4. 退换货资格判断 Tool（基于订单状态、签收时间、品类规则）。
 5. 用户确认后提交退货申请 Tool，返回申请单号和待审核状态。
 6. 创建售后工单 Tool，及人工接管上下文摘要。
@@ -104,8 +104,9 @@ flowchart TB
   A --> R[版本化规则文档检索]
   A --> O[订单与物流 Tool]
   A --> T[售后工单 Tool]
-  O --> D[模拟 OMS 数据]
-  T --> D
+  O --> I[Integration Adapter]
+  I --> D[HTTP Mock OMS / Logistics]
+  T --> K[SQLite Ticket Service]
   A --> L[结构化日志与评测]
 ```
 
@@ -145,6 +146,35 @@ MVP 采用最小 RBAC，并使用模拟身份数据；真实生产环境应由�
 - 授权：订单查询必须同时校验“订单号 + 当前用户归属”；客服动作必须校验工单分配范围。
 - 审计：记录身份、角色、资源、操作、结果与事件 ID；不得记录令牌、完整地址或联系方式。
 - 数据最小化：Tool 返回模型所需的最少字段，例如物流状态而非完整收货信息。
+
+### 4.5 客户系统集成边界
+
+Agent 侧不得直接读取客户系统原始 JSON 或依赖客户字段命名。OMS / Logistics 的调用必须经过以下边界：
+
+```text
+Customer HTTP API
+  → CustomerSystemClient
+  → IntegrationAdapter
+  → Field Mapper
+  → Canonical order / logistics model
+  → Tool
+  → Skill
+  → Agent
+```
+
+当前模拟客户字段和 canonical 字段至少包含：
+
+| Canonical field | Customer field | Current behavior |
+| --- | --- | --- |
+| `order_id` | `order_no` | direct |
+| `anonymous_user_id` | `customer_ref` | direct |
+| `order_status` | `fulfillment_status` | enum mapping |
+| `category` | `category_code` | enum mapping |
+| `logistics.latest_event` | `tracking_events[-1]` | latest event normalization |
+| `logistics.exception` | `has_exception` | boolean normalization |
+| `logistics.estimated_arrival` | `eta` | direct |
+
+字段映射、错误契约和 HTTP 调用由 `apps/api/support/customer_client.py`、`mappers.py` 与 `integration.py` 负责；Skill 不感知 `order_no` 等客户系统字段。Ticket 当前为 SQLite POC Service，不声明已接入外部 SCRM。
 
 ## 5. 功能需求
 
@@ -319,7 +349,7 @@ MVP 不要求接入外部告警平台，但必须提供可查询的结构化指�
 
 ## 8. 技术方案与目录建议
 
-- 前端：Next.js / React，提供对话页、人工接管页、质量看板。
+- 前端：React + TypeScript + Vite，提供对话页、人工接管页、质量看板。
 - 后端：Python + FastAPI，提供 Agent、Tool、评测与管理 API。
 - 编排：`/assist` 使用 LangGraph 显式状态图选择场景 Skill；Skill Executor 管理 Tool 权限、确认和 Trace，Handler 完成场景流程。LangGraph 与模型均不得绕过 Skill/Tool 的校验、权限、确认和幂等约束。
 - 数据：MVP 使用 SQLite 或 DuckDB；知识向量存储可使用本地轻量实现。
@@ -346,6 +376,8 @@ deploy/docker-compose.yml
 - `docs/api-contracts.md`：Tool/API 契约、错误码、重试与幂等策略。
 - `docs/poc-acceptance-report.md`：测试结果、指标、已知风险与结论。
 - `docs/deployment-runbook.md`：部署、配置、日志、故障排查与回滚。
+- `docs/incident-debugging-case.md`：可复现的模拟 OMS 超时排障案例。
+- `docs/portfolio-walkthrough.md`：面试中的 FDE 交付讲解路径。
 
 ## 10. 分阶段计划
 

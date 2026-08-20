@@ -120,7 +120,6 @@ def build_support_graph(deps: SupportGraphDependencies) -> Any:
     def classify_intent(state: SupportState) -> SupportState:
         request = state["request"]
         message = request.message
-        normalized = state["normalized_message"]
         previous_intent = state.get("previous_intent")
         decision = deps.intents.classify(message, previous_intent)
         decision_source = decision["source"]

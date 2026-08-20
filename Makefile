@@ -1,4 +1,4 @@
-.PHONY: dev web web-dev test eval verify lint clean help
+.PHONY: dev web web-dev test eval verify lint demo-oms-timeout clean help
 
 # Default: show available commands
 help:
@@ -15,6 +15,7 @@ help:
 	@echo "  make test       运行全部单元测试和集成测试"
 	@echo "  make eval       运行全部评测 (核心 + 意图 + 记忆 + Skill + RAG)"
 	@echo "  make verify     运行测试 + 评测 + 构建验证 (发布前完整检查)"
+	@echo "  make demo-oms-timeout 复现 OMS 超时 → 重试 → 安全转人工"
 	@echo ""
 	@echo "Other:"
 	@echo "  make lint       静态检查"
@@ -52,9 +53,13 @@ verify: test eval
 	python3 -c "from apps.api.main import app; print('Backend Build OK')"
 	@echo "--- Verify Complete ---"
 
+# === Reproducible incident demo ===
+demo-oms-timeout:
+	python3 scripts/demo_oms_timeout.py
+
 # === Linting ===
 lint:
-	@command -v pyflakes >/dev/null 2>&1 && python3 -m pyflakes apps/ evals/ tests/ || echo "pyflakes not installed, skipping"
+	python3 -m ruff check apps/ evals/ scripts/ tests/
 
 # === Cleanup ===
 clean:

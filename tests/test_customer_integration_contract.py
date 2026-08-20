@@ -112,6 +112,13 @@ def test_upstream_5xx_maps_to_external_unavailable(client: CustomerSystemClient)
         client.fetch_order("OD202608001", "user-demo-001", headers={"X-Fault-Inject": "500"})
 
 
+def test_demo_fault_mode_is_forwarded_to_customer_system(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MOCK_CUSTOMER_FAULT", "500")
+    faulted = CustomerSystemClient(BASE_URL, timeout_ms=3000)
+    with pytest.raises(ExternalUnavailableError):
+        faulted.fetch_order("OD202608001", "user-demo-001")
+
+
 def test_upstream_timeout_maps_to_external_timeout() -> None:
     short = CustomerSystemClient(BASE_URL, timeout_ms=200)
     with pytest.raises(ExternalTimeoutError):

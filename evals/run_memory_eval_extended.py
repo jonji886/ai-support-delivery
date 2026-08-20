@@ -12,7 +12,6 @@
 """
 
 import json
-import os
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -27,7 +26,8 @@ from apps.api.support.conversations import ConversationStore
 
 def run_eval() -> dict:
     results: list[dict] = []
-    fixed_clock = lambda: datetime(2026, 8, 13, 10, 0, 0, tzinfo=timezone.utc)
+    def fixed_clock() -> datetime:
+        return datetime(2026, 8, 13, 10, 0, 0, tzinfo=timezone.utc)
 
     with tempfile.TemporaryDirectory(prefix="memory-eval-ext-") as directory:
         conv_store = ConversationStore(

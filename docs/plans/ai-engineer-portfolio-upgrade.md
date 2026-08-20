@@ -1,4 +1,6 @@
-# AI Engineer Portfolio Upgrade Plan
+# Historical Plan: AI Engineer Portfolio Upgrade
+
+> 历史实施计划，记录 React、Memory、Vector Store、Docker 和评测能力补齐前的目标与 Gap Analysis。该计划中的 P0/P1 实施已完成；当前仓库对外定位以根目录 [`README.md`](../../README.md) 的 Forward Deployed AI / AI Agent Delivery Portfolio 为准。本文件不代表当前 Scope。
 
 > 目标：补齐招聘岗位要求中当前项目缺少的可验证工程证据，不推翻现有架构。
 

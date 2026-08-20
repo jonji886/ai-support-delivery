@@ -237,6 +237,10 @@ Badcase 在开发集上定位并修复，代表性样本进入固定回归集；
 
 门禁要求场景通过率和订单纠正准确率为 100%，跨用户泄漏率与陈旧槽位误用率均为 0%。这是因为一次串用户或串订单不能被其他十一次成功平均掉。当前为 12/12；该结果验证状态流转契约，不覆盖生产数据库并发、容量、备份与租户隔离。
 
+### Conversation / Long-term Memory 扩展评测
+
+`python3 evals/run_memory_eval_extended.py` 运行 9 个场景，覆盖 context continuity、user isolation、stale memory、correction、long-term preference、conflict resolution、memory pollution 和 token cost。当前为 9/9；跨用户泄漏率与 memory pollution rate 均为 0%，样例 window 相比 full history 的 token reduction 为 49.57%。这是策略行为和样例成本评估，不是生产容量或线上成本承诺。
+
 ### Skill 选择与执行两层评测
 
 `python3 evals/run_skill_eval.py` 生成 `evals/skill-report.json`，刻意把评测拆成两层：
@@ -249,6 +253,8 @@ Badcase 在开发集上定位并修复，代表性样本进入固定回归集；
 不拆层时，端到端失败只能看到“回答不对”，无法判断应该修意图/Registry，还是修 Skill 内部流程。执行评测还区分 Tool 成功与 Skill 完成：质量争议的资格查询可以成功，但场景状态必须为 `handoff`。
 
 当前选择 16/16、执行 13/13，高风险 Skill 召回率 100%，越权 Tool、未确认写和重复写均为 0。后三项使用零容忍发布门禁；一次违规不能被其他场景的高通过率平均掉。当前数据为确定性 POC 固定集，生产还需加入真实流量表达、依赖故障、并发确认和不同 Skill 版本的灰度对照。
+
+依赖故障也应进入交付证据而不是只写在设计中：`make demo-oms-timeout` 可复现 Mock OMS timeout → 只读 retry → 标准错误 → 人工接管，并用 `trace_id` 回放 Graph、Skill 和 Tool Span。完整排障过程见 [`incident-debugging-case.md`](incident-debugging-case.md)。
 
 ## 九、面试中如何讲这套方法
 

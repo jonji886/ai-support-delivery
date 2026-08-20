@@ -32,7 +32,6 @@ from apps.api.support.errors import (
     ExternalTimeoutError,
     ExternalUnavailableError,
     IntegrationError,
-    InvalidResponseError,
 )
 
 logger = logging.getLogger("ai_support_delivery.integration")

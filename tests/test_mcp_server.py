@@ -1,9 +1,5 @@
 """MCP Server 测试。"""
 
-import json
-import sys
-from pathlib import Path
-
 import pytest
 
 from apps.mcp.server import MCPServer

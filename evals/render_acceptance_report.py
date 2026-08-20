@@ -12,6 +12,7 @@ def render() -> None:
     rag_report = json.loads((ROOT / "evals/policy-report.json").read_text(encoding="utf-8"))
     intent_report = json.loads((ROOT / "evals/intent-report.json").read_text(encoding="utf-8"))
     memory_report = json.loads((ROOT / "evals/memory-report.json").read_text(encoding="utf-8"))
+    extended_memory_report = json.loads((ROOT / "evals/memory-eval-extended-report.json").read_text(encoding="utf-8"))
     skill_report = json.loads((ROOT / "evals/skill-report.json").read_text(encoding="utf-8"))
     cases = [
         json.loads(line)
@@ -33,6 +34,17 @@ def render() -> None:
     rag_challenge = rag_report["results"]["challenge"][rag_report["release_gate"]["strategy"]]
     rag_vector = rag_report["results"]["regression"]["vector"]
     rag_rerank = rag_report["results"]["regression"]["fusion_rerank"]
+    rag_strategy = rag_report["release_gate"]["strategy"]
+    rag_cases = sum(rag_report["results"][dataset][rag_strategy]["total_cases"] for dataset in ("development", "regression", "challenge"))
+    total_checks = (
+        total
+        + intent_report["total_cases"]
+        + memory_report["total_cases"]
+        + extended_memory_report["total_cases"]
+        + skill_selection["total_cases"]
+        + skill_execution["total_cases"]
+        + rag_cases
+    )
     status = "达标" if core >= 85 else "未达标"
     citation_status = "达标" if citation >= 90 else "未达标"
     handoff_status = "达标" if handoff >= 95 else "未达标"
@@ -55,12 +67,15 @@ def render() -> None:
 | 意图目录固定集 | {intent_report['passed_cases']}/{intent_report['total_cases']}，{intent_report['accuracy'] * 100:.2f}% | ≥ 95% | {'达标' if intent_report['release_gate']['passed'] else '未达标'} |
 | 高风险意图召回率 | {intent_report['high_risk_recall'] * 100:.2f}% | 100% | {'达标' if intent_report['high_risk_recall'] == 1 else '未达标'} |
 | 短期状态场景通过率 | {memory_report['passed_cases']}/{memory_report['total_cases']}，{memory_report['scenario_pass_rate'] * 100:.2f}% | 100% | {'达标' if memory_report['release_gate']['passed'] else '未达标'} |
+| Memory 扩展场景通过率 | {extended_memory_report['passed_cases']}/{extended_memory_report['total_cases']}，{extended_memory_report['pass_rate'] * 100:.2f}% | 100% | {'达标' if extended_memory_report['release_gate']['passed'] else '未达标'} |
 | 跨用户/陈旧状态误用率 | {memory_report['cross_user_leakage_rate'] * 100:.2f}% / {memory_report['stale_slot_usage_rate'] * 100:.2f}% | 0% / 0% | {'达标' if memory_report['release_gate']['passed'] else '未达标'} |
 | Skill 选择准确率 | {skill_selection['passed_cases']}/{skill_selection['total_cases']}，{skill_selection['selection_accuracy'] * 100:.2f}% | ≥ 95% | {'达标' if skill_report['release_gate']['passed'] else '未达标'} |
 | Skill 执行场景通过率 | {skill_execution['passed_cases']}/{skill_execution['total_cases']}，{skill_execution['scenario_pass_rate'] * 100:.2f}% | ≥ 95% | {'达标' if skill_report['release_gate']['passed'] else '未达标'} |
 | 越权 Tool / 未确认写 / 重复写 | {skill_execution['unauthorized_tool_calls']} / {skill_execution['unconfirmed_writes']} / {skill_execution['duplicate_writes']} | 0 / 0 / 0 | {'达标' if skill_report['release_gate']['passed'] else '未达标'} |
 
 当前结论：四类核心流程可以本地演示；高风险路由和部分异常场景是否达到试点标准，以以上指标和 SPEC 阻断条件为准。该结果不代表客户生产收益。
+
+当前报告合计 {total_checks} 条检查：核心 {total}、Intent {intent_report['total_cases']}、Skill {skill_selection['total_cases'] + skill_execution['total_cases']}、RAG 三个数据集 {rag_cases}、Memory 基础与扩展 {memory_report['total_cases'] + extended_memory_report['total_cases']}。不同专项存在数据集重叠时按所属报告统计，不把这个合计解释为独立生产流量样本。
 
 ## 评测覆盖
 
@@ -73,6 +88,8 @@ def render() -> None:
 Intent Catalog 专项固定集共 {intent_report['total_cases']} 条，覆盖六类意图、hard negative、上下文追问、多意图和高风险组合；主意图准确率 {intent_report['accuracy'] * 100:.2f}%、高风险召回率 {intent_report['high_risk_recall'] * 100:.2f}%、次意图召回率 {intent_report['multi_intent_secondary_recall'] * 100:.2f}%，门禁{'通过' if intent_report['release_gate']['passed'] else '未通过'}。该结果验证确定性安全路由与目录边界，不代表真实外部模型的生产泛化效果。
 
 短期状态专项共 {memory_report['total_cases']} 个场景，覆盖继承、来源/作用域、Tool 已验证事实、用户纠正、订单切换、过期和跨用户隔离；跨用户泄漏率 {memory_report['cross_user_leakage_rate'] * 100:.2f}%、陈旧槽位误用率 {memory_report['stale_slot_usage_rate'] * 100:.2f}%、订单纠正准确率 {memory_report['order_correction_accuracy'] * 100:.2f}%，门禁{'通过' if memory_report['release_gate']['passed'] else '未通过'}。该结果不覆盖生产数据库容量、并发与多租户能力。
+
+Memory 扩展专项共 {extended_memory_report['total_cases']} 个场景，覆盖 context continuity、user isolation、stale memory、correction、long-term preference、conflict resolution、memory pollution 和 token cost；通过率 {extended_memory_report['pass_rate'] * 100:.2f}%，跨用户泄漏与污染率为 0%，window 相比 full history 的样例 token reduction 为 {extended_memory_report['token_cost_reduction']['reduction_rate'] * 100:.2f}%。这是策略行为测试，不是线上 token 成本承诺。
 
 ## 场景 Skill 专项结果
 
@@ -89,6 +106,8 @@ RAG 专项集共 100 条：开发集 30 条、固定回归集 40 条、挑战集
 ## 未通过样例与修复优先级
 
 当前固定评测没有失败样例；支付敏感独立路由、重复建单、跨用户访问和中文多轮追问均已纳入回归。后续挑战集应继续增加并发写入、规则冲突和真实模型 Provider 故障样本。
+
+依赖故障的可复现路径见 [`incident-debugging-case.md`](incident-debugging-case.md)，运行 `make demo-oms-timeout` 可验证 OMS timeout → retry → 标准错误 → 人工接管 → Trace 的链路。
 
 ## 尚未验证
 

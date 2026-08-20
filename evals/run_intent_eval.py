@@ -2,7 +2,6 @@
 
 import json
 import sys
-from collections import Counter, defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
