@@ -68,7 +68,7 @@ flowchart TB
     MEM --> LTM[Long-term Memory<br/>profile + episodic]
     RAG --> VS[Vector Store<br/>local / chroma]
     T --> IA[Integration Adapter<br/>timeout + retry + circuit breaker]
-    IA --> OMS[Mock OMS / Logistics / Tickets]
+    IA --> MOCK[HTTP Mock Customer Systems<br/>OMS + Logistics]
     API -.-> TRACE[TraceStore / EventStore<br/>SQLite parent-child spans]
 ```
 
@@ -216,7 +216,7 @@ Memory Eval 覆盖 8 个维度：
 | **Retry** | 只读操作指数退避；写操作靠幂等键 |
 | **Circuit Breaker** | CLOSED → OPEN（连续 5 次失败）→ HALF_OPEN |
 | **Error Mapping** | 原始异常映射为标准错误，不泄露给 Agent |
-| **Fault Injection** | 确定性故障注入，环境变量配置 |
+| **Fault Injection** | 确定性故障注入，`X-Fault-Inject` 请求头 / `?fault=` 参数驱动 |
 
 ### Write Operation Safety
 
@@ -268,11 +268,15 @@ docker compose up --build
 ### 方式 2：本地开发
 
 ```bash
-# 后端
-python3 -m pip install -r requirements.txt
-make dev  # 或: python3 -m uvicorn apps.api.main:app --port 8000
+# 1) Mock 客户系统（OMS + Logistics，Agent 服务通过 HTTP 访问）
+python3 -m uvicorn apps.mock_customer_systems.app:app --port 8001
 
-# 前端（另开终端）
+# 2) 后端（另开终端）
+python3 -m pip install -r requirements.txt
+MOCK_CUSTOMER_SYSTEMS_BASE_URL=http://127.0.0.1:8001 \
+  make dev  # 或: python3 -m uvicorn apps.api.main:app --port 8000
+
+# 3) 前端（另开终端）
 cd apps/web
 npm install
 npm run dev  # http://localhost:5173 (Vite dev server with API proxy)
@@ -282,7 +286,7 @@ npm run dev  # http://localhost:5173 (Vite dev server with API proxy)
 
 ```bash
 # 运行测试
-make test  # 158 passed, 2 skipped
+make test  # 170 passed, 2 skipped
 
 # 运行评测
 make eval  # 全部通过
@@ -316,7 +320,7 @@ cd apps/web && npm run build  # dist/ 产物
 | 项目 | 当前状态 | 说明 |
 |---|---|---|
 | 用户认证 | Mock `X-User-Id` Header | 未集成 JWT/OAuth |
-| 外部系统 | Mock JSON 数据 | 未连接真实 OMS/物流 API |
+| 外部系统 | HTTP Mock Customer Systems（OMS + Logistics） | 未连接真实 OMS/物流 API，字段映射层已就绪 |
 | 持久化 | SQLite 单文件 | 生产应替换为 PostgreSQL |
 | LLM | DeepSeek 单 Provider | 已抽象 Provider，未集成多模型 |
 | 向量数据库 | 默认 local provider | Chroma 可选，未在 CI 验证 |

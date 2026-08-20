@@ -5,8 +5,14 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from apps.api.support.customer_client import (
+    CustomerSystemClient,
+    OrderForbiddenError,
+    OrderNotFoundError,
+)
 from apps.api.support.errors import IntegrationError
 from apps.api.support.integration import IntegrationAdapter, map_to_tool_error_code
+from apps.api.support.mappers import map_oms_order
 from apps.api.support.responses import ToolResponse
 
 logger = logging.getLogger("ai_support_delivery.tool")
@@ -15,12 +21,14 @@ logger = logging.getLogger("ai_support_delivery.tool")
 class ReturnApplicationService:
     def __init__(
         self,
-        orders: Dict[str, Dict[str, Any]],
+        orders: Optional[Dict[str, Dict[str, Any]]] = None,
         db_path: Optional[str] = None,
         *,
         adapter: Optional[IntegrationAdapter] = None,
+        client: Optional[CustomerSystemClient] = None,
     ) -> None:
-        self.orders = orders
+        self.orders = orders if orders is not None else {}
+        self.client = client
         self.db_path = db_path or os.getenv("SUPPORT_DB_PATH", "runtime/support.db")
         if self.db_path != ":memory:":
             os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
@@ -61,9 +69,22 @@ class ReturnApplicationService:
         row = connection.execute("SELECT COUNT(*) AS count FROM return_applications").fetchone()
         return f"RA202608{int(row['count']) + 1:04d}"
 
+    def _load_order(self, order_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch an internal-schema order record; ``None`` means not found."""
+        if self.client is not None:
+            try:
+                oms = self.client.fetch_order(order_id, user_id)
+            except OrderNotFoundError:
+                return None
+            return map_oms_order(oms)
+        return self.orders.get(order_id)
+
     def submit(self, order_id: str, user_id: str, reason: str, key: str, trace_id: str) -> ToolResponse:
         def _do_submit() -> ToolResponse:
-            order = self.orders.get(order_id)
+            try:
+                order = self._load_order(order_id, user_id)
+            except OrderForbiddenError:
+                return ToolResponse.failure(trace_id, "403_ORDER_FORBIDDEN", "无权为该订单提交退货申请。", 403)
             if order is None:
                 return ToolResponse.failure(trace_id, "404_ORDER_NOT_FOUND", "未找到该订单，无法提交退货申请。", 404)
             if order["anonymous_user_id"] != user_id:

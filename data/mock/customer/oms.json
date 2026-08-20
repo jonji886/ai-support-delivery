@@ -1,0 +1,16 @@
+[
+  {
+    "order_no": "OD202608001",
+    "customer_ref": "user-demo-001",
+    "fulfillment_status": "DELIVERED",
+    "category_code": "STANDARD_GOODS",
+    "signed_at": "2026-08-05T09:30:00Z"
+  },
+  {
+    "order_no": "OD202608002",
+    "customer_ref": "user-demo-002",
+    "fulfillment_status": "EXCEPTION",
+    "category_code": "STANDARD_GOODS",
+    "signed_at": null
+  }
+]

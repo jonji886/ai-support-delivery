@@ -176,7 +176,7 @@ flowchart TB
     end
 
     subgraph External["外部业务系统"]
-        OMS[OMS / 物流<br/>Mock 数据]
+        OMS[OMS / 物流<br/>HTTP Mock Customer Systems]
         TS[工单系统<br/>SQLite POC]
         KB[知识库<br/>版本化 JSON]
         LLM[LLM Provider<br/>DeepSeek 可选]
@@ -211,7 +211,7 @@ flowchart TB
 | LangGraph | 单进程编排 | 分布式执行 + checkpointer |
 | Skill Runtime | 仓库内 JSON Manifest | 远程注册中心 + 审批 + 灰度 |
 | Integration Layer | 线程超时 + 内存熔断 | async + Redis 共享熔断状态 |
-| OMS / 物流 | 本地 JSON Mock | 客户 OMS API + 幂等 + 审计 |
+| OMS / 物流 | HTTP Mock Customer Systems（uvicorn） | 客户 OMS API + 幂等 + 审计 |
 | 工单系统 | SQLite | 客户工单系统 + 事件流 |
 | 知识库 | 内存线性扫描 | 向量索引 + 增量入库 |
 | LLM Provider | 可选 DeepSeek | 客户批准的模型服务 |

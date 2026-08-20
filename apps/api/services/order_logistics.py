@@ -5,15 +5,26 @@ from pathlib import Path
 from typing import Any, Optional
 
 from apps.api.schemas import OrderLogisticsData
+from apps.api.support.customer_client import (
+    CustomerSystemClient,
+    OrderForbiddenError,
+    OrderNotFoundError,
+)
 from apps.api.support.errors import IntegrationError
 from apps.api.support.integration import IntegrationAdapter, map_to_tool_error_code
+from apps.api.support.mappers import map_oms_order
 from apps.api.support.responses import ToolResponse
 
 logger = logging.getLogger("ai_support_delivery.tool")
 
 
 class OrderLogisticsService:
-    """Order/logistics query service backed by mock OMS data.
+    """Order/logistics query service backed by the customer OMS + Logistics.
+
+    数据源两种模式：
+    * HTTP 模式（生产/演示）：通过 :class:`CustomerSystemClient` 真实调用客户系统，
+      并经 Field Mapping 转换为内部 schema —— Agent 不直接读取 mock JSON。
+    * 内存模式（离线/单元测试）：直接查 ``records``。
 
     All read calls pass through :class:`IntegrationAdapter` to demonstrate
     timeout, retry, circuit-breaker and error-mapping behavior.
@@ -24,8 +35,10 @@ class OrderLogisticsService:
         records: dict[str, dict[str, Any]],
         *,
         adapter: Optional[IntegrationAdapter] = None,
+        client: Optional[CustomerSystemClient] = None,
     ) -> None:
         self.records = records
+        self.client = client
         self.adapter = adapter or IntegrationAdapter(system="oms")
 
     @classmethod
@@ -35,11 +48,33 @@ class OrderLogisticsService:
             payload = json.load(file)
         return cls({record["order_id"]: record for record in payload})
 
+    @classmethod
+    def from_http(cls, client: CustomerSystemClient) -> "OrderLogisticsService":
+        return cls(records={}, client=client)
+
+    def _fetch_record(self, order_id: str, user_id: str) -> Optional[dict[str, Any]]:
+        """Fetch an internal-schema order record; ``None`` means not found.
+
+        HTTP 模式下真实调用客户系统 OMS + Logistics 并经 Mapper 转换；
+        内存模式下直接查询 ``records``。
+        """
+        if self.client is not None:
+            try:
+                oms = self.client.fetch_order(order_id, user_id)
+                tracking = self.client.fetch_tracking(order_id, user_id)
+            except OrderNotFoundError:
+                return None
+            return map_oms_order(oms, tracking)
+        return self.records.get(order_id)
+
     def query(self, order_id: str, user_id: str, trace_id: str) -> ToolResponse:
         started_at = datetime.now().timestamp()
 
         def _do_query() -> ToolResponse:
-            record = self.records.get(order_id)
+            try:
+                record = self._fetch_record(order_id, user_id)
+            except OrderForbiddenError:
+                return self._failure(trace_id, "403_ORDER_FORBIDDEN", "无权查询该订单。", started_at)
             if record is None:
                 return self._failure(trace_id, "404_ORDER_NOT_FOUND", "未找到该订单，无法确认物流状态。", started_at)
             if record["anonymous_user_id"] != user_id:

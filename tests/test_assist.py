@@ -106,28 +106,35 @@ def test_follow_up_can_supply_missing_return_reason() -> None:
 
 
 def test_explicit_order_switch_does_not_reuse_old_return_reason(monkeypatch) -> None:
-    from apps.api.main import conversations
+    from apps.api.main import conversations, return_service
+    from apps.api.support.customer_client import OrderNotFoundError
+
+    # HTTP 集成模式下 return_service 通过客户系统查询订单，无法直接注入内存记录；
+    # 这里注入一个仅认识合成订单 OD202608009 的 client stub，隔离 memory 行为。
+    class _InjectedClient:
+        def fetch_order(self, order_id, user_id):
+            if order_id == "OD202608009" and user_id == "user-demo-001":
+                return {
+                    "order_no": "OD202608009",
+                    "customer_ref": "user-demo-001",
+                    "fulfillment_status": "DELIVERED",
+                    "category_code": "STANDARD_GOODS",
+                    "signed_at": "2026-08-05T09:30:00Z",
+                }
+            raise OrderNotFoundError(f"order {order_id} not found")
+
+    monkeypatch.setattr(return_service, "client", _InjectedClient())
 
     session_id = "conversation-order-switch-" + uuid4().hex
     conversations.save(
         session_id, user_id="user-demo-001", order_id="OD202608001", intent="return", resolved=False,
         return_reason="尺码不合适", slot_sources={"order_id": "user_explicit", "return_reason": "user_explicit"},
     )
-    # Use a same-user synthetic order to isolate memory behavior from ownership.
-    from apps.api.main import return_service
-    original = return_service.orders.get("OD202608009")
-    return_service.orders["OD202608009"] = {**return_service.orders["OD202608001"], "order_id": "OD202608009"}
-    try:
-        response = client.post(
-            "/assist",
-            json={"message": "这个订单能退吗", "order_id": "OD202608009", "session_id": session_id},
-            headers={"X-User-Id": "user-demo-001"},
-        )
-    finally:
-        if original is None:
-            return_service.orders.pop("OD202608009", None)
-        else:
-            return_service.orders["OD202608009"] = original
+    response = client.post(
+        "/assist",
+        json={"message": "这个订单能退吗", "order_id": "OD202608009", "session_id": session_id},
+        headers={"X-User-Id": "user-demo-001"},
+    )
 
     assert response.status_code == 400
     assert "退货原因" in response.json()["message"]

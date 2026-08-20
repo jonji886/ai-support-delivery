@@ -1,0 +1,30 @@
+[
+  {
+    "order_no": "OD202608001",
+    "carrier_code": "DEMO_EXPRESS",
+    "tracking_status": "SHIPPED",
+    "tracking_events": [
+      {
+        "event_time": "2026-08-12T09:30:00Z",
+        "location": "Los Angeles, US",
+        "description": "包裹已到达当地分拨中心"
+      }
+    ],
+    "has_exception": false,
+    "eta": "2026-08-15T18:00:00Z"
+  },
+  {
+    "order_no": "OD202608002",
+    "carrier_code": "DEMO_POST",
+    "tracking_status": "EXCEPTION",
+    "tracking_events": [
+      {
+        "event_time": "2026-08-10T14:20:00Z",
+        "location": "Chicago, US",
+        "description": "收件地址待补充"
+      }
+    ],
+    "has_exception": true,
+    "eta": null
+  }
+]

@@ -19,6 +19,7 @@ from apps.api.skills.contracts import SkillExecutionContext
 from apps.api.skills.executor import SkillExecutor
 from apps.api.skills.handlers import SkillHandlerDependencies, SupportSkillHandlers
 from apps.api.skills.registry import SkillRegistry
+from apps.api.support.customer_client import CustomerSystemClient
 from apps.api.support.responses import ToolResponse, new_trace_id
 from apps.api.support.events import EventStore
 from apps.api.support.conversations import ConversationStore
@@ -38,11 +39,16 @@ app.add_middleware(
     allow_headers=["Content-Type", "X-User-Id", "X-Role", "X-Trace-Id"],
     expose_headers=["X-Trace-Id"],
 )
-service = OrderLogisticsService.from_default_data()
-return_service = ReturnEligibilityService.from_default_data()
+# 客户系统集成边界：Agent 侧服务通过 HTTP Client 访问 Mock Customer Systems
+# （OMS + Logistics），不再直接读取 mock JSON。集成测试/本地开发通过
+# MOCK_CUSTOMER_SYSTEMS_BASE_URL 指向 mock 服务地址。
+_customer_base_url = os.getenv("MOCK_CUSTOMER_SYSTEMS_BASE_URL", "http://127.0.0.1:8001")
+_customer_client = CustomerSystemClient(base_url=_customer_base_url)
+service = OrderLogisticsService.from_http(_customer_client)
+return_service = ReturnEligibilityService.from_http(_customer_client)
 policy_service = PolicySearchService.from_default_data()
 ticket_service = TicketService()
-return_application_service = ReturnApplicationService(return_service.orders)
+return_application_service = ReturnApplicationService(client=_customer_client)
 deepseek = DeepSeekClient()
 events = EventStore(os.getenv("EVENTS_DB_PATH", "runtime/events.db"))
 traces = TraceStore()

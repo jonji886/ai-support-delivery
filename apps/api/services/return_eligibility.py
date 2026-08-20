@@ -5,8 +5,14 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from apps.api.schemas import ReturnEligibilityData
+from apps.api.support.customer_client import (
+    CustomerSystemClient,
+    OrderForbiddenError,
+    OrderNotFoundError,
+)
 from apps.api.support.errors import IntegrationError
 from apps.api.support.integration import IntegrationAdapter, map_to_tool_error_code
+from apps.api.support.mappers import map_oms_order
 from apps.api.support.responses import ToolResponse
 
 logger = logging.getLogger("ai_support_delivery.tool")
@@ -20,11 +26,13 @@ class ReturnEligibilityService:
         clock: Optional[Callable[[], datetime]] = None,
         *,
         adapter: Optional[IntegrationAdapter] = None,
+        client: Optional[CustomerSystemClient] = None,
     ) -> None:
         self.orders = orders
         self.policies = policies
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.adapter = adapter or IntegrationAdapter(system="oms")
+        self.client = client
 
     @classmethod
     def from_default_data(cls) -> "ReturnEligibilityService":
@@ -35,11 +43,35 @@ class ReturnEligibilityService:
             policies = {item["category"]: item for item in json.load(file)}
         return cls(orders, policies)
 
+    @classmethod
+    def from_http(
+        cls,
+        client: CustomerSystemClient,
+        clock: Optional[Callable[[], datetime]] = None,
+    ) -> "ReturnEligibilityService":
+        data_root = Path(__file__).parents[3] / "data" / "mock"
+        with (data_root / "policies" / "return-policy.json").open(encoding="utf-8") as file:
+            policies = {item["category"]: item for item in json.load(file)}
+        return cls(orders={}, policies=policies, clock=clock, client=client)
+
+    def _fetch_order(self, order_id: str, user_id: str) -> Optional[dict[str, Any]]:
+        """Fetch an internal-schema order record; ``None`` means not found."""
+        if self.client is not None:
+            try:
+                oms = self.client.fetch_order(order_id, user_id)
+            except OrderNotFoundError:
+                return None
+            return map_oms_order(oms)
+        return self.orders.get(order_id)
+
     def check(self, order_id: str, user_id: str, reason: str, trace_id: str) -> ToolResponse:
         started_at = self.clock().timestamp()
 
         def _do_check() -> ToolResponse:
-            order = self.orders.get(order_id)
+            try:
+                order = self._fetch_order(order_id, user_id)
+            except OrderForbiddenError:
+                return self._failure(trace_id, "403_ORDER_FORBIDDEN", "无权查询该订单。", 403, started_at)
             if order is None:
                 return self._failure(trace_id, "404_ORDER_NOT_FOUND", "未找到该订单，无法判断退换货资格。", 404, started_at)
             if order["anonymous_user_id"] != user_id:

@@ -26,16 +26,36 @@ services:
       INTENT_SLOT_TTL_MINUTES: ${INTENT_SLOT_TTL_MINUTES:-30}
       LOGISTICS_FACT_TTL_MINUTES: ${LOGISTICS_FACT_TTL_MINUTES:-5}
       RETURN_FACT_TTL_MINUTES: ${RETURN_FACT_TTL_MINUTES:-15}
+      # Customer systems integration (HTTP): Agent services reach OMS + Logistics
+      # through the mock-customer-systems container, not local JSON files.
+      MOCK_CUSTOMER_SYSTEMS_BASE_URL: ${MOCK_CUSTOMER_SYSTEMS_BASE_URL:-http://mock-customer-systems:8001}
       # Fault injection (disabled by default)
       MOCK_OMS_LATENCY_MS: ${MOCK_OMS_LATENCY_MS:-0}
       MOCK_OMS_FAILURE_RATE: ${MOCK_OMS_FAILURE_RATE:-0}
       MOCK_TICKET_LATENCY_MS: ${MOCK_TICKET_LATENCY_MS:-0}
       MOCK_TICKET_FAILURE_RATE: ${MOCK_TICKET_FAILURE_RATE:-0}
+    depends_on:
+      mock-customer-systems:
+        condition: service_started
     volumes:
       - runtime-data:/app/runtime
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  mock-customer-systems:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    command: ["uvicorn", "apps.mock_customer_systems.app:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 10s
       timeout: 3s
       retries: 3

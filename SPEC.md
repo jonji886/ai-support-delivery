@@ -330,7 +330,8 @@ MVP 不要求接入外部告警平台，但必须提供可查询的结构化指�
 ```text
 apps/web/                 # 对话与客服工作台
 apps/api/                 # FastAPI、Agent 与 Tool
-data/mock/                # 匿名订单、物流、规则样例
+apps/mock_customer_systems/  # HTTP Mock 客户系统（OMS + Logistics，字段命名与内部 schema 不同）
+data/mock/customer/       # 匿名订单、物流样例（客户字段命名）
 knowledge/                # 可追溯规则文档
 evals/                    # 测试集、评测脚本、badcase
 docs/                     # 方案、接口、验收、部署、排障

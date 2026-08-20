@@ -61,8 +61,11 @@ Skill 运行错误契约：
 | 403 | `403_ORDER_FORBIDDEN` | 不透露订单详细信息 |
 | 404 | `404_ORDER_NOT_FOUND` | 明确无法确认，不生成物流结论 |
 | 422 | FastAPI validation error | 拒绝非法订单号 |
+| 429 | `429_RATE_LIMITED` | 客户系统限流，可重试 |
+| 503 | `503_EXTERNAL_UNAVAILABLE` | 客户系统不可用，转人工 |
+| 504 | `504_EXTERNAL_TIMEOUT` | 客户系统超时，转人工 |
 
-所有响应包含 `success`、`data`、`error_code`、`message`、`trace_id`。每个成功 Tool 必须显式提供业务语义明确的 `message`，禁止使用通用“查询成功”作为默认文案。Tool 只返回模拟数据中的最小必要字段；调用日志记录工具名、trace ID、结果、错误码和耗时。
+所有响应包含 `success`、`data`、`error_code`、`message`、`trace_id`。每个成功 Tool 必须显式提供业务语义明确的 `message`，禁止使用通用“查询成功”作为默认文案。Tool 只返回客户系统响应中映射后的最小必要字段；调用日志记录工具名、trace ID、结果、错误码和耗时。订单/物流数据通过 `CustomerSystemClient` 以 HTTP 访问 Mock Customer Systems（`apps/mock_customer_systems`），并经过 `mappers` 字段映射，不再直接读取本地 JSON。
 
 所有 HTTP 响应同时返回 `X-Trace-Id`；浏览器跨域请求可读取该响应头。服务端生成新的链路号，不接受调用方覆盖本地 Trace。若发生未处理异常，API 返回受控的 `500_INTERNAL_ERROR` 响应和可查询的 `trace_id`。
 
